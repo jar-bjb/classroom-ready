@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ClipboardCheck, ExternalLink } from "lucide-react";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/dates";
 import { getEffectiveRoomStatus, roomStatusLabel } from "@/lib/status";
@@ -23,15 +23,12 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
-      <header className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+      <header className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Coordinator Dashboard</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin Dashboard</p>
           <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] lg:text-6xl">Pemeriksaan Kelas</h1>
-          <p className="mt-2 max-w-2xl text-muted">Pantau status kesiapan kelas, issue terbuka, dan ruang yang perlu tindakan.</p>
+          <p className="mt-2 max-w-2xl text-muted">Pantau status kesiapan kelas, issue terbuka, dan detail laporan per kelas.</p>
         </div>
-        <Link href="/mobile" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-4 text-sm font-black text-accent-foreground">
-          <ClipboardCheck size={18} /> Buka Mobile Petugas
-        </Link>
       </header>
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

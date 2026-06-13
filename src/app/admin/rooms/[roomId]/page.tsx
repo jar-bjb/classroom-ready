@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Camera, ClipboardList, Plus, QrCode, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Plus, QrCode, Save, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { addRoomComponent, deleteRoomComponent, updateRoomComponent } from "@/app/actions";
 import { categoryLabel, getEffectiveRoomStatus, inspectionResultLabel } from "@/lib/status";
@@ -95,14 +95,9 @@ export default async function AdminRoomDetailPage({ params }: { params: Promise<
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-          <Link href={`/mobile/rooms/${room.id}/inspect`} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 text-sm font-bold text-accent-foreground shadow-sm">
-            <ClipboardList size={20} /> Buka Form Petugas
-          </Link>
-          <div>
-            <Image src={`/api/rooms/${room.id}/qr`} alt={`QR ${room.code}`} width={112} height={112} className="mx-auto rounded-2xl border border-border bg-white p-2" unoptimized />
-            <p className="mt-2 flex items-center gap-2 text-xs text-muted"><QrCode size={14} /> QR langsung membuka form pemeriksaan petugas.</p>
-          </div>
+        <div className="mt-5 rounded-2xl border border-border bg-background p-4">
+          <Image src={`/api/rooms/${room.id}/qr`} alt={`QR ${room.code}`} width={112} height={112} className="rounded-2xl border border-border bg-white p-2" unoptimized />
+          <p className="mt-2 flex items-center gap-2 text-xs text-muted"><QrCode size={14} /> QR untuk ditempel di kelas dan dipindai petugas.</p>
         </div>
       </section>
 

@@ -4,7 +4,7 @@ import { ClipboardCheck, ListChecks, QrCode } from "lucide-react";
 export function MobileTopBar({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-md items-center justify-between gap-3 lg:max-w-6xl">
+      <div className="mx-auto flex max-w-md items-center justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Classroom Ready</p>
           <h1 className="text-xl font-bold tracking-[-0.03em]">{title}</h1>
@@ -37,5 +37,5 @@ export function BottomNav() {
 }
 
 export function PageFrame({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4 lg:max-w-6xl lg:pb-10">{children}</main>;
+  return <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">{children}</main>;
 }

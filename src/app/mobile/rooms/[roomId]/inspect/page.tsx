@@ -55,8 +55,8 @@ export default async function InspectRoom({
     <>
       <MobileTopBar title="Pemeriksaan Kelas" subtitle={`${room.code} • ${room.name}`} />
       <PageFrame>
-        <Link href={`/mobile/rooms/${room.id}`} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted">
-          <ArrowLeft size={16} /> Kembali ke ruang
+        <Link href="/mobile" className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted">
+          <ArrowLeft size={16} /> Kembali ke daftar tugas
         </Link>
 
         {errorMessage ? (
@@ -152,7 +152,7 @@ export default async function InspectRoom({
             </div>
           </section>
 
-          <div className="sticky bottom-20 z-20 rounded-3xl border border-border bg-card p-3 shadow-[0_12px_40px_rgba(23,19,15,0.16)] lg:bottom-4">
+          <div className="sticky bottom-20 z-20 rounded-3xl border border-border bg-card p-3 shadow-[0_12px_40px_rgba(23,19,15,0.16)]">
             <button type="submit" className="tap-target w-full rounded-2xl bg-accent px-5 py-4 text-base font-black text-accent-foreground shadow-sm">
               Submit Pemeriksaan Kelas
             </button>
