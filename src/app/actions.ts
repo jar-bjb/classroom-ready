@@ -227,14 +227,19 @@ function formCategory(formData: FormData): ItemCategory {
 export async function createRoom(formData: FormData) {
   const code = formString(formData, "code").toUpperCase();
   const name = formString(formData, "name");
-  const typeId = formString(formData, "typeId");
-  if (!code || !name || !typeId) throw new Error("Kode, nama, dan tipe ruang wajib diisi");
+  if (!code || !name) throw new Error("Kode dan nama ruang wajib diisi");
+
+  const roomType = await prisma.roomType.upsert({
+    where: { slug: "kelas" },
+    update: { name: "Kelas" },
+    create: { slug: "kelas", name: "Kelas" },
+  });
 
   await prisma.room.create({
     data: {
       code,
       name,
-      typeId,
+      typeId: roomType.id,
       floor: formString(formData, "floor") || null,
       location: formString(formData, "location") || null,
       capacity: formOptionalInt(formData, "capacity"),

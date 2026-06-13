@@ -88,17 +88,15 @@ async function main() {
     data: { name: "Koordinator Demo", email: "koordinator@example.local", role: UserRole.COORDINATOR },
   });
 
-  const regular = await prisma.roomType.create({ data: { slug: "kelas-reguler", name: "Kelas Reguler" } });
-  const lab = await prisma.roomType.create({ data: { slug: "lab-komputer", name: "Lab Komputer" } });
-  const aula = await prisma.roomType.create({ data: { slug: "aula", name: "Aula" } });
+  const kelas = await prisma.roomType.create({ data: { slug: "kelas", name: "Kelas" } });
 
   await prisma.room.createMany({
     data: [
-      { code: "R.201", name: "Ruang 201", floor: "2", location: "Gedung Utama", capacity: 30, typeId: regular.id },
-      { code: "R.202", name: "Ruang 202", floor: "2", location: "Gedung Utama", capacity: 30, typeId: regular.id },
-      { code: "R.305", name: "Ruang 305", floor: "3", location: "Gedung Utama", capacity: 35, typeId: regular.id },
-      { code: "LAB.1", name: "Lab Komputer 1", floor: "1", location: "Gedung IT", capacity: 25, typeId: lab.id },
-      { code: "AULA", name: "Aula Pembelajaran", floor: "1", location: "Gedung Utama", capacity: 120, typeId: aula.id },
+      { code: "R.201", name: "Ruang 201", floor: "2", location: "Gedung Utama", capacity: 30, typeId: kelas.id },
+      { code: "R.202", name: "Ruang 202", floor: "2", location: "Gedung Utama", capacity: 30, typeId: kelas.id },
+      { code: "R.305", name: "Ruang 305", floor: "3", location: "Gedung Utama", capacity: 35, typeId: kelas.id },
+      { code: "R.401", name: "Ruang 401", floor: "4", location: "Gedung Utama", capacity: 25, typeId: kelas.id },
+      { code: "R.402", name: "Ruang 402", floor: "4", location: "Gedung Utama", capacity: 25, typeId: kelas.id },
     ],
   });
 

@@ -10,30 +10,24 @@ import { createRoom, deleteRoom } from "@/app/actions";
 export const dynamic = "force-dynamic";
 
 export default async function AdminRoomsPage() {
-  const [rooms, roomTypes] = await Promise.all([
-    prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } }),
-    prisma.roomType.findMany({ orderBy: { name: "asc" } }),
-  ]);
+  const rooms = await prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } });
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
       <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin</p>
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Kelola Ruangan</h1>
-        <p className="mt-2 text-muted">Tambah/hapus ruangan. Klik masuk ruang untuk edit atau hapus komponen pemeriksaan khusus ruangan tersebut.</p>
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Kelola Kelas</h1>
+        <p className="mt-2 text-muted">Tambah/hapus kelas. Klik masuk kelas untuk edit atau hapus komponen pemeriksaan khusus kelas tersebut.</p>
       </div>
 
       <form action={createRoom} className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 font-black"><Plus size={18} /> Tambah ruangan</div>
+        <div className="mb-4 flex items-center gap-2 font-black"><Plus size={18} /> Tambah kelas</div>
         <div className="grid gap-3 md:grid-cols-6">
           <input name="code" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Kode, ex R.204" required />
-          <input name="name" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent md:col-span-2" placeholder="Nama ruangan" required />
-          <select name="typeId" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" required>
-            {roomTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
-          </select>
+          <input name="name" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent md:col-span-2" placeholder="Nama kelas" required />
           <input name="floor" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Lantai" />
           <input name="capacity" type="number" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Kapasitas" />
-          <input name="location" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent md:col-span-5" placeholder="Lokasi/gedung" />
+          <input name="location" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Lokasi/gedung" />
           <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Simpan</button>
         </div>
       </form>
