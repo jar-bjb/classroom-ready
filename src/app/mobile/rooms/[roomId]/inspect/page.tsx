@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
-import { ArrowLeft, Camera, Check, X } from "lucide-react";
+import { ArrowLeft, Check, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { categoryLabel } from "@/lib/status";
+import { getEffectiveChecklistItems } from "@/lib/checklist";
 import { submitWeeklyInspection } from "@/app/actions";
 import { BottomNav, MobileTopBar, PageFrame } from "@/components/app-shell";
 
@@ -29,7 +30,13 @@ export default async function InspectRoom({
           include: {
             sections: {
               orderBy: { sortOrder: "asc" },
-              include: { items: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
+              include: {
+                items: {
+                  where: { isActive: true },
+                  orderBy: { sortOrder: "asc" },
+                  include: { roomOverrides: { where: { roomId } } },
+                },
+              }
             },
           },
         },
@@ -39,11 +46,14 @@ export default async function InspectRoom({
 
   if (!room || !template?.versions[0]) notFound();
   const version = template.versions[0];
-  const totalItems = version.sections.reduce((count, section) => count + section.items.length, 0);
+  const sections = version.sections
+    .map((section) => ({ ...section, items: getEffectiveChecklistItems(section.items, room.id, room.type.slug) }))
+    .filter((section) => section.items.length > 0);
+  const totalItems = sections.reduce((count, section) => count + section.items.length, 0);
 
   return (
     <>
-      <MobileTopBar title="Checklist Mingguan" subtitle={`${room.code} • ${room.name}`} />
+      <MobileTopBar title="Pemeriksaan Kelas" subtitle={`${room.code} • ${room.name}`} />
       <PageFrame>
         <Link href={`/mobile/rooms/${room.id}`} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted">
           <ArrowLeft size={16} /> Kembali ke ruang
@@ -79,7 +89,7 @@ export default async function InspectRoom({
             <p className="mt-1 text-sm text-muted">{room.type.name} • {totalItems} item checklist • versi {version.version}</p>
           </section>
 
-          {version.sections.map((section) => (
+          {sections.map((section) => (
             <section key={section.id} className="rounded-3xl border border-border bg-card p-4 shadow-sm">
               <div className="mb-4 border-b border-border pb-3">
                 <h3 className="text-lg font-black tracking-[-0.03em]">{section.title}</h3>
@@ -118,10 +128,6 @@ export default async function InspectRoom({
                         Catatan jika ada temuan
                         <textarea name={`note_${item.id}`} rows={2} className="rounded-2xl border border-border bg-card px-4 py-3 font-normal text-foreground outline-none focus:border-accent" placeholder="Contoh: AC hidup tapi tidak dingin, perlu cek filter." />
                       </label>
-                      <label className="tap-target flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card px-4 py-3 text-sm font-bold text-muted">
-                        <Camera size={18} /> Foto temuan wajib jika Tidak OK
-                        <input type="file" name={`photo_${item.id}`} accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" />
-                      </label>
                     </div>
                   </fieldset>
                 ))}
@@ -130,15 +136,25 @@ export default async function InspectRoom({
           ))}
 
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <label className="grid gap-1 text-sm font-semibold">
-              Catatan umum pemeriksaan
-              <textarea name="summaryNote" rows={3} className="rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" placeholder="Opsional: ringkasan kondisi ruang minggu ini." />
-            </label>
+            <div className="grid gap-3">
+              <label className="tap-target flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-background px-4 py-4 text-sm font-bold text-muted">
+                <ImagePlus size={18} /> Upload foto pendukung (opsional)
+                <input type="file" name="inspectionPhoto" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Keterangan foto
+                <textarea name="inspectionPhotoNote" rows={2} className="rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" placeholder="Opsional: jelaskan foto yang diupload, misalnya kondisi kritikal." />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Catatan umum pemeriksaan
+                <textarea name="summaryNote" rows={3} className="rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" placeholder="Opsional: ringkasan kondisi ruang minggu ini." />
+              </label>
+            </div>
           </section>
 
           <div className="sticky bottom-20 z-20 rounded-3xl border border-border bg-card p-3 shadow-[0_12px_40px_rgba(23,19,15,0.16)] lg:bottom-4">
             <button type="submit" className="tap-target w-full rounded-2xl bg-accent px-5 py-4 text-base font-black text-accent-foreground shadow-sm">
-              Submit Checklist Mingguan
+              Submit Pemeriksaan Kelas
             </button>
           </div>
         </form>

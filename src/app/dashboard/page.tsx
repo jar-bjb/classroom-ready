@@ -26,8 +26,8 @@ export default async function DashboardPage() {
       <header className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Coordinator Dashboard</p>
-          <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] lg:text-6xl">Weekly Room Certification</h1>
-          <p className="mt-2 max-w-2xl text-muted">Pantau status sertifikasi mingguan, issue terbuka, dan ruang yang perlu tindakan.</p>
+          <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] lg:text-6xl">Pemeriksaan Kelas</h1>
+          <p className="mt-2 max-w-2xl text-muted">Pantau status kesiapan kelas, issue terbuka, dan ruang yang perlu tindakan.</p>
         </div>
         <Link href="/mobile" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-4 text-sm font-black text-accent-foreground">
           <ClipboardCheck size={18} /> Buka Mobile Petugas
@@ -35,10 +35,10 @@ export default async function DashboardPage() {
       </header>
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Certified" value={certified} tone="good" />
-        <MetricCard label="Catatan" value={notes} tone="warn" />
-        <MetricCard label="Bermasalah" value={notReady} tone="bad" />
-        <MetricCard label="Belum dicek" value={unchecked} />
+        <MetricCard label="Siap digunakan" value={certified} tone="good" />
+        <MetricCard label="Perlu tindakan" value={notes + notReady} tone="warn" />
+        <MetricCard label="Issue kritikal" value={notReady} tone="bad" />
+        <MetricCard label="Belum diperiksa" value={unchecked} />
       </section>
 
       <section className="mt-6 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">

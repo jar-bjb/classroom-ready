@@ -7,11 +7,11 @@ export function getEffectiveRoomStatus(status: RoomCertificationStatus, expiresA
 
 export function roomStatusLabel(status: string) {
   const labels: Record<string, string> = {
-    UNCHECKED: "Belum dicek",
-    CERTIFIED: "Certified",
-    CERTIFIED_WITH_NOTES: "Certified + Catatan",
-    NOT_CERTIFIED: "Tidak layak",
-    EXPIRED: "Expired",
+    UNCHECKED: "Belum diperiksa",
+    CERTIFIED: "Siap digunakan",
+    CERTIFIED_WITH_NOTES: "Perlu tindakan",
+    NOT_CERTIFIED: "Perlu tindakan",
+    EXPIRED: "Belum diperiksa",
   };
   return labels[status] ?? status;
 }
@@ -29,9 +29,9 @@ export function roomStatusClass(status: string) {
 
 export function inspectionResultLabel(result: InspectionResult) {
   const labels: Record<InspectionResult, string> = {
-    CERTIFIED: "Certified",
-    CERTIFIED_WITH_NOTES: "Certified with Notes",
-    NOT_CERTIFIED: "Not Certified",
+    CERTIFIED: "Siap digunakan",
+    CERTIFIED_WITH_NOTES: "Perlu tindakan",
+    NOT_CERTIFIED: "Perlu tindakan",
   };
   return labels[result];
 }

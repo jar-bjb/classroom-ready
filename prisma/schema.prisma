@@ -138,12 +138,33 @@ model Room {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
-  type        RoomType            @relation(fields: [typeId], references: [id])
-  inspections InspectionSession[]
-  issues      Issue[]
+  type          RoomType                    @relation(fields: [typeId], references: [id])
+  inspections   InspectionSession[]
+  issues        Issue[]
+  itemOverrides RoomChecklistItemOverride[]
 
   @@index([status])
   @@index([typeId])
+}
+
+model RoomChecklistItemOverride {
+  id         String       @id @default(cuid())
+  roomId     String
+  itemId     String
+  prompt     String?
+  helpText   String?
+  category   ItemCategory?
+  isCritical Boolean?
+  isActive   Boolean      @default(true)
+  sortOrder  Int?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  item ChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, itemId])
+  @@index([roomId, sortOrder])
 }
 
 model ChecklistTemplate {
@@ -205,8 +226,9 @@ model ChecklistItem {
   weight                 Int          @default(1)
   isActive               Boolean      @default(true)
 
-  section   ChecklistSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  responses InspectionResponse[]
+  section       ChecklistSection           @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  responses     InspectionResponse[]
+  roomOverrides RoomChecklistItemOverride[]
 
   @@unique([sectionId, code])
   @@index([category])
@@ -270,6 +292,7 @@ model Attachment {
   sizeBytes    Int
   storagePath  String
   publicPath   String
+  caption      String?
   createdAt    DateTime @default(now())
 
   session  InspectionSession?  @relation(fields: [sessionId], references: [id], onDelete: Cascade)

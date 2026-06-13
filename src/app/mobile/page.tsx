@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, QrCode, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, QrCode } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatDate, isExpired } from "@/lib/dates";
 import { getEffectiveRoomStatus } from "@/lib/status";
@@ -33,23 +33,20 @@ export default async function MobileHome() {
 
   return (
     <>
-      <MobileTopBar title="Checklist Mingguan" subtitle="Mobile-first untuk petugas pemeriksa" />
+      <MobileTopBar title="Pemeriksaan Kelas" subtitle="Mobile-first untuk petugas pemeriksa" />
       <PageFrame>
         <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Minggu ini</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <MetricCard label="Certified" value={certified} tone="good" />
-            <MetricCard label="Catatan" value={notes} tone="warn" />
-            <MetricCard label="Bermasalah" value={notReady} tone="bad" />
-            <MetricCard label="Belum" value={unchecked} />
+            <MetricCard label="Siap digunakan" value={certified} tone="good" />
+            <MetricCard label="Perlu tindakan" value={notes + notReady} tone="warn" />
+            <MetricCard label="Belum diperiksa" value={unchecked} />
+            <MetricCard label="Issue terbuka" value={withStatus.reduce((total, room) => total + room.issues.length, 0)} tone="bad" />
           </div>
-          <div id="scan" className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div id="scan" className="mt-4 grid gap-3">
             <button className="tap-target flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 text-sm font-bold text-accent-foreground shadow-sm" type="button">
               <QrCode size={20} /> Scan QR Ruang
             </button>
-            <Link href="/dashboard" className="tap-target flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-4 text-sm font-bold">
-              <Search size={20} /> Lihat Dashboard
-            </Link>
           </div>
           <p className="mt-3 text-xs leading-5 text-muted">
             Tombol scan QR disiapkan untuk integrasi kamera/PWA. Saat ini pilih ruang dari daftar dulu.

@@ -105,8 +105,8 @@ async function main() {
   const template = await prisma.checklistTemplate.create({
     data: {
       key: "weekly-room-certification",
-      name: "Weekly Room Certification",
-      description: "Checklist mingguan untuk sertifikasi kesiapan ruang pembelajaran.",
+      name: "Pemeriksaan Kelas",
+      description: "Pemeriksaan mingguan untuk memastikan kesiapan ruang pembelajaran.",
       cadence: "WEEKLY",
     },
   });

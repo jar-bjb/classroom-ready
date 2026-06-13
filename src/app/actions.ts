@@ -7,8 +7,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { addDays } from "@/lib/dates";
 import { assignedRoleForCategory, priorityForItem } from "@/lib/status";
+import { getEffectiveChecklistItems } from "@/lib/checklist";
 import { getSafeUploadExtension, validateUploadFile } from "@/lib/upload-policy";
-import type { ChecklistItem, InspectionResult, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
+import type { ChecklistItem, InspectionResult, ItemCategory, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
 
 const validResponseValues = new Set<ResponseValue>(["OK", "NOT_OK", "NA"]);
 const inspectorEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -24,7 +25,7 @@ function redirectWithFormError(roomId: string, message: string): never {
   redirect(`/mobile/rooms/${roomId}/inspect?error=${encodeURIComponent(message)}`);
 }
 
-function parseResponseValue(value: FormDataEntryValue | null, item: ChecklistItem, roomId: string) {
+function parseResponseValue(value: FormDataEntryValue | null, item: Pick<ChecklistItem, "prompt">, roomId: string) {
   if (typeof value !== "string" || !validResponseValues.has(value as ResponseValue)) {
     redirectWithFormError(roomId, `Jawaban checklist tidak valid untuk item: ${item.prompt}`);
   }
@@ -37,7 +38,7 @@ function getUploadFile(value: FormDataEntryValue | null) {
   return null;
 }
 
-async function persistFile(file: File, sessionId: string, responseId: string) {
+async function persistFile(file: File, sessionId: string, responseId?: string | null, caption?: string | null) {
   validateUploadFile(file);
 
   const uploadRoot = process.env.UPLOAD_DIR || "/tmp/classroom-ready-uploads";
@@ -58,13 +59,14 @@ async function persistFile(file: File, sessionId: string, responseId: string) {
   return prisma.attachment.create({
     data: {
       sessionId,
-      responseId,
+      responseId: responseId || null,
       fileName,
       originalName: file.name || fileName,
       mimeType: file.type,
       sizeBytes: file.size,
       storagePath,
       publicPath: `/api/uploads/${relativeDir.split(path.sep).join("/")}/${fileName}`,
+      caption: caption || null,
     },
   });
 }
@@ -85,13 +87,19 @@ export async function submitWeeklyInspection(formData: FormData) {
   }
 
   const [room, templateVersion] = await Promise.all([
-    prisma.room.findUnique({ where: { id: roomId } }),
+    prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
     prisma.checklistTemplateVersion.findUnique({
       where: { id: templateVersionId },
       include: {
         sections: {
           orderBy: { sortOrder: "asc" },
-          include: { items: { where: { isActive: true }, orderBy: { sortOrder: "asc" } } },
+          include: {
+            items: {
+              where: { isActive: true },
+              orderBy: { sortOrder: "asc" },
+              include: { roomOverrides: { where: { roomId } } },
+            },
+          }
         },
       },
     }),
@@ -101,25 +109,23 @@ export async function submitWeeklyInspection(formData: FormData) {
     throw new Error("Data ruang/template tidak ditemukan");
   }
 
-  const items = templateVersion.sections.flatMap((section) => section.items);
+  const items = templateVersion.sections.flatMap((section) => getEffectiveChecklistItems(section.items, room.id, room.type.slug));
+  const inspectionPhoto = getUploadFile(formData.get("inspectionPhoto"));
+  const inspectionPhotoNote = String(formData.get("inspectionPhotoNote") || "").trim();
+
+  if (inspectionPhoto) {
+    try {
+      validateUploadFile(inspectionPhoto);
+    } catch (error) {
+      redirectWithFormError(roomId, error instanceof Error ? error.message : "File foto tidak valid.");
+    }
+  }
+
   const responseInputs = items.map((item) => {
     const value = parseResponseValue(formData.get(`value_${item.id}`), item, roomId);
     const note = String(formData.get(`note_${item.id}`) || "").trim();
-    const file = getUploadFile(formData.get(`photo_${item.id}`));
 
-    if (value === "NOT_OK" && !file) {
-      redirectWithFormError(roomId, `Foto wajib dilampirkan untuk temuan Tidak OK: ${item.prompt}`);
-    }
-
-    if (file) {
-      try {
-        validateUploadFile(file);
-      } catch (error) {
-        redirectWithFormError(roomId, error instanceof Error ? error.message : "File foto tidak valid.");
-      }
-    }
-
-    return { item, value, note, file };
+    return { item, value, note };
   });
 
   const failedResponses = responseInputs.filter(({ item, value }) => value === "NOT_OK" || (item.isCritical && value === "NA"));
@@ -156,7 +162,11 @@ export async function submitWeeklyInspection(formData: FormData) {
     },
   });
 
-  for (const { item, value, note, file } of responseInputs) {
+  if (inspectionPhoto) {
+    await persistFile(inspectionPhoto, session.id, null, inspectionPhotoNote);
+  }
+
+  for (const { item, value, note } of responseInputs) {
     const response = await prisma.inspectionResponse.create({
       data: {
         sessionId: session.id,
@@ -165,10 +175,6 @@ export async function submitWeeklyInspection(formData: FormData) {
         note: note || null,
       },
     });
-
-    if (file) {
-      await persistFile(file, session.id, response.id);
-    }
 
     if (value === "NOT_OK" || (item.isCritical && value === "NA")) {
       await prisma.issue.create({
@@ -201,4 +207,125 @@ export async function submitWeeklyInspection(formData: FormData) {
   revalidatePath(`/mobile/rooms/${roomId}`);
   revalidatePath("/dashboard");
   redirect(`/mobile/rooms/${roomId}?submitted=1`);
+}
+
+function formString(formData: FormData, key: string) {
+  return String(formData.get(key) || "").trim();
+}
+
+function formOptionalInt(formData: FormData, key: string) {
+  const value = formString(formData, key);
+  return value ? Number(value) : null;
+}
+
+function formCategory(formData: FormData): ItemCategory {
+  const value = formString(formData, "category") as ItemCategory;
+  const valid: ItemCategory[] = ["FACILITY", "HVAC", "LIGHTING", "ELECTRICAL", "AV", "IT", "CONSUMABLE", "CLEANLINESS", "SAFETY"];
+  return valid.includes(value) ? value : "FACILITY";
+}
+
+export async function createRoom(formData: FormData) {
+  const code = formString(formData, "code").toUpperCase();
+  const name = formString(formData, "name");
+  const typeId = formString(formData, "typeId");
+  if (!code || !name || !typeId) throw new Error("Kode, nama, dan tipe ruang wajib diisi");
+
+  await prisma.room.create({
+    data: {
+      code,
+      name,
+      typeId,
+      floor: formString(formData, "floor") || null,
+      location: formString(formData, "location") || null,
+      capacity: formOptionalInt(formData, "capacity"),
+    },
+  });
+  revalidatePath("/admin/rooms");
+  revalidatePath("/mobile");
+}
+
+export async function deleteRoom(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  if (!roomId) throw new Error("Room ID wajib ada");
+  await prisma.room.update({ where: { id: roomId }, data: { isActive: false } });
+  revalidatePath("/admin/rooms");
+  revalidatePath("/mobile");
+}
+
+export async function updateRoomComponent(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  const itemId = formString(formData, "itemId");
+  if (!roomId || !itemId) throw new Error("Room/item ID wajib ada");
+
+  await prisma.roomChecklistItemOverride.upsert({
+    where: { roomId_itemId: { roomId, itemId } },
+    update: {
+      prompt: formString(formData, "prompt"),
+      helpText: formString(formData, "helpText") || null,
+      category: formCategory(formData),
+      isCritical: formData.get("isCritical") === "on",
+      sortOrder: formOptionalInt(formData, "sortOrder"),
+      isActive: true,
+    },
+    create: {
+      roomId,
+      itemId,
+      prompt: formString(formData, "prompt"),
+      helpText: formString(formData, "helpText") || null,
+      category: formCategory(formData),
+      isCritical: formData.get("isCritical") === "on",
+      sortOrder: formOptionalInt(formData, "sortOrder"),
+      isActive: true,
+    },
+  });
+  revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
+}
+
+export async function deleteRoomComponent(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  const itemId = formString(formData, "itemId");
+  if (!roomId || !itemId) throw new Error("Room/item ID wajib ada");
+
+  await prisma.roomChecklistItemOverride.upsert({
+    where: { roomId_itemId: { roomId, itemId } },
+    update: { isActive: false },
+    create: { roomId, itemId, isActive: false },
+  });
+  revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
+}
+
+export async function addRoomComponent(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  const sectionId = formString(formData, "sectionId");
+  const prompt = formString(formData, "prompt");
+  if (!roomId || !sectionId || !prompt) throw new Error("Ruang, bagian, dan nama komponen wajib diisi");
+
+  const item = await prisma.checklistItem.create({
+    data: {
+      sectionId,
+      code: `room-${roomId.slice(-6)}-${Date.now()}`,
+      prompt,
+      helpText: formString(formData, "helpText") || null,
+      category: formCategory(formData),
+      isCritical: formData.get("isCritical") === "on",
+      appliesToRoomTypeSlugs: [`__room:${roomId}`],
+      sortOrder: formOptionalInt(formData, "sortOrder") || 999,
+    },
+  });
+
+  await prisma.roomChecklistItemOverride.create({
+    data: {
+      roomId,
+      itemId: item.id,
+      prompt,
+      helpText: formString(formData, "helpText") || null,
+      category: formCategory(formData),
+      isCritical: formData.get("isCritical") === "on",
+      sortOrder: formOptionalInt(formData, "sortOrder") || 999,
+    },
+  });
+  revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
 }

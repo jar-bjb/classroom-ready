@@ -68,7 +68,7 @@ export default async function RoomDetail({ params }: { params: Promise<{ roomId:
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {version ? (
               <Link href={`/mobile/rooms/${room.id}/inspect`} className="tap-target flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 text-sm font-bold text-accent-foreground shadow-sm">
-                <ClipboardList size={20} /> Mulai Checklist
+                <ClipboardList size={20} /> Mulai Pemeriksaan
               </Link>
             ) : (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-800">Template belum tersedia</div>
