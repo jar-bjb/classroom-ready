@@ -5,6 +5,7 @@ import { formatDateTime } from "@/lib/dates";
 import { getEffectiveRoomStatus, roomStatusLabel } from "@/lib/status";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
+import { AdminNav } from "@/components/admin-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,9 @@ export default async function DashboardPage() {
   const unchecked = effective.filter((room) => room.effectiveStatus === "UNCHECKED").length;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
+    <>
+      <AdminNav />
+      <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
       <header className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin Dashboard</p>
@@ -41,8 +44,8 @@ export default async function DashboardPage() {
       <section className="mt-6 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
         <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-black tracking-[-0.03em]">Status ruang</h2>
-            <Link href="/admin/rooms" className="inline-flex items-center gap-1 text-sm font-bold text-muted">Admin ruang <ExternalLink size={14} /></Link>
+            <h2 className="text-xl font-black tracking-[-0.03em]">Status kelas</h2>
+            <Link href="/admin/rooms" className="inline-flex items-center gap-1 text-sm font-bold text-muted">Kelola Kelas <ExternalLink size={14} /></Link>
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-border">
             {effective.map((room) => (
@@ -86,6 +89,7 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }

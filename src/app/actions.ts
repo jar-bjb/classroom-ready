@@ -285,6 +285,7 @@ export async function updateRoomComponent(formData: FormData) {
     },
   });
   revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/admin/rooms/${roomId}/edit`);
   revalidatePath(`/mobile/rooms/${roomId}/inspect`);
 }
 
@@ -299,6 +300,7 @@ export async function deleteRoomComponent(formData: FormData) {
     create: { roomId, itemId, isActive: false },
   });
   revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/admin/rooms/${roomId}/edit`);
   revalidatePath(`/mobile/rooms/${roomId}/inspect`);
 }
 
@@ -333,5 +335,6 @@ export async function addRoomComponent(formData: FormData) {
     },
   });
   revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/admin/rooms/${roomId}/edit`);
   revalidatePath(`/mobile/rooms/${roomId}/inspect`);
 }

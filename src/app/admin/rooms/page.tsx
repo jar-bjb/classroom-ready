@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { getEffectiveRoomStatus } from "@/lib/status";
 import { formatDate } from "@/lib/dates";
 import { createRoom, deleteRoom } from "@/app/actions";
+import { AdminNav } from "@/components/admin-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +14,13 @@ export default async function AdminRoomsPage() {
   const rooms = await prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } });
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
+    <>
+      <AdminNav />
+      <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
       <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin</p>
         <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Kelola Kelas</h1>
-        <p className="mt-2 text-muted">Tambah/hapus kelas. Klik masuk kelas untuk edit atau hapus komponen pemeriksaan khusus kelas tersebut.</p>
+        <p className="mt-2 text-muted">Tambah/hapus kelas dan edit fasilitas atau komponen pemeriksaan khusus per kelas.</p>
       </div>
 
       <form action={createRoom} className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-sm">
@@ -48,8 +51,8 @@ export default async function AdminRoomsPage() {
               <Image src={`/api/rooms/${room.id}/qr`} alt={`QR ${room.code}`} width={144} height={144} className="mt-5 rounded-2xl border border-border bg-white p-3" unoptimized />
               <p className="mt-3 text-sm text-muted">{room.certificationExpiresAt ? `Berlaku s/d ${formatDate(room.certificationExpiresAt)}` : "Belum diperiksa"}</p>
               <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
-                <Link href={`/admin/rooms/${room.id}`} className="inline-flex items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">
-                  Kelola komponen
+                <Link href={`/admin/rooms/${room.id}/edit`} className="inline-flex items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">
+                  Edit kelas
                 </Link>
                 <form action={deleteRoom}>
                   <input type="hidden" name="roomId" value={room.id} />
@@ -62,6 +65,7 @@ export default async function AdminRoomsPage() {
           );
         })}
       </div>
-    </main>
+      </main>
+    </>
   );
 }
