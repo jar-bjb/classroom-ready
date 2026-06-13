@@ -7,16 +7,38 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { addDays } from "@/lib/dates";
 import { assignedRoleForCategory, priorityForItem } from "@/lib/status";
-import type { InspectionResult, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
+import { getSafeUploadExtension, validateUploadFile } from "@/lib/upload-policy";
+import type { ChecklistItem, InspectionResult, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
 
-function safeFileName(name: string) {
-  const extension = path.extname(name).toLowerCase().replace(/[^.a-z0-9]/g, "");
-  const base = path.basename(name, extension).toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 40);
-  return `${base || "photo"}-${crypto.randomUUID()}${extension || ".bin"}`;
+const validResponseValues = new Set<ResponseValue>(["OK", "NOT_OK", "NA"]);
+const inspectorEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function safeFileName(name: string, mimeType: string) {
+  const extension = getSafeUploadExtension(mimeType);
+  const rawBase = path.basename(name || "photo", path.extname(name || "photo"));
+  const base = rawBase.toLowerCase().replace(/[^a-z0-9-]+/g, "-").slice(0, 40);
+  return `${base || "photo"}-${crypto.randomUUID()}${extension}`;
+}
+
+function redirectWithFormError(roomId: string, message: string): never {
+  redirect(`/mobile/rooms/${roomId}/inspect?error=${encodeURIComponent(message)}`);
+}
+
+function parseResponseValue(value: FormDataEntryValue | null, item: ChecklistItem, roomId: string) {
+  if (typeof value !== "string" || !validResponseValues.has(value as ResponseValue)) {
+    redirectWithFormError(roomId, `Jawaban checklist tidak valid untuk item: ${item.prompt}`);
+  }
+
+  return value as ResponseValue;
+}
+
+function getUploadFile(value: FormDataEntryValue | null) {
+  if (value instanceof File && value.size > 0) return value;
+  return null;
 }
 
 async function persistFile(file: File, sessionId: string, responseId: string) {
-  if (!file || file.size === 0) return null;
+  validateUploadFile(file);
 
   const uploadRoot = process.env.UPLOAD_DIR || "/tmp/classroom-ready-uploads";
   const today = new Date();
@@ -28,7 +50,7 @@ async function persistFile(file: File, sessionId: string, responseId: string) {
   const absoluteDir = path.join(uploadRoot, relativeDir);
   await mkdir(absoluteDir, { recursive: true });
 
-  const fileName = safeFileName(file.name || "photo.jpg");
+  const fileName = safeFileName(file.name, file.type);
   const storagePath = path.join(absoluteDir, fileName);
   const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(storagePath, buffer);
@@ -39,7 +61,7 @@ async function persistFile(file: File, sessionId: string, responseId: string) {
       responseId,
       fileName,
       originalName: file.name || fileName,
-      mimeType: file.type || "application/octet-stream",
+      mimeType: file.type,
       sizeBytes: file.size,
       storagePath,
       publicPath: `/api/uploads/${relativeDir.split(path.sep).join("/")}/${fileName}`,
@@ -56,6 +78,10 @@ export async function submitWeeklyInspection(formData: FormData) {
 
   if (!roomId || !templateVersionId) {
     throw new Error("Ruang dan template checklist wajib tersedia");
+  }
+
+  if (!inspectorEmailPattern.test(inspectorEmail)) {
+    redirectWithFormError(roomId, "Email/ID petugas harus berbentuk email valid.");
   }
 
   const [room, templateVersion] = await Promise.all([
@@ -76,11 +102,31 @@ export async function submitWeeklyInspection(formData: FormData) {
   }
 
   const items = templateVersion.sections.flatMap((section) => section.items);
-  const failedItems = items.filter((item) => formData.get(`value_${item.id}`) === "NOT_OK");
-  const hasCriticalFailure = failedItems.some((item) => item.isCritical);
+  const responseInputs = items.map((item) => {
+    const value = parseResponseValue(formData.get(`value_${item.id}`), item, roomId);
+    const note = String(formData.get(`note_${item.id}`) || "").trim();
+    const file = getUploadFile(formData.get(`photo_${item.id}`));
+
+    if (value === "NOT_OK" && !file) {
+      redirectWithFormError(roomId, `Foto wajib dilampirkan untuk temuan Tidak OK: ${item.prompt}`);
+    }
+
+    if (file) {
+      try {
+        validateUploadFile(file);
+      } catch (error) {
+        redirectWithFormError(roomId, error instanceof Error ? error.message : "File foto tidak valid.");
+      }
+    }
+
+    return { item, value, note, file };
+  });
+
+  const failedResponses = responseInputs.filter(({ item, value }) => value === "NOT_OK" || (item.isCritical && value === "NA"));
+  const hasCriticalFailure = failedResponses.some(({ item }) => item.isCritical);
   const result: InspectionResult = hasCriticalFailure
     ? "NOT_CERTIFIED"
-    : failedItems.length > 0
+    : failedResponses.length > 0
       ? "CERTIFIED_WITH_NOTES"
       : "CERTIFIED";
   const roomStatus: RoomCertificationStatus = result;
@@ -110,10 +156,7 @@ export async function submitWeeklyInspection(formData: FormData) {
     },
   });
 
-  for (const item of items) {
-    const rawValue = formData.get(`value_${item.id}`);
-    const value = (rawValue || "NA") as ResponseValue;
-    const note = String(formData.get(`note_${item.id}`) || "").trim();
+  for (const { item, value, note, file } of responseInputs) {
     const response = await prisma.inspectionResponse.create({
       data: {
         sessionId: session.id,
@@ -123,12 +166,11 @@ export async function submitWeeklyInspection(formData: FormData) {
       },
     });
 
-    const maybeFile = formData.get(`photo_${item.id}`);
-    if (maybeFile instanceof File && maybeFile.size > 0) {
-      await persistFile(maybeFile, session.id, response.id);
+    if (file) {
+      await persistFile(file, session.id, response.id);
     }
 
-    if (value === "NOT_OK") {
+    if (value === "NOT_OK" || (item.isCritical && value === "NA")) {
       await prisma.issue.create({
         data: {
           roomId,
@@ -136,7 +178,7 @@ export async function submitWeeklyInspection(formData: FormData) {
           responseId: response.id,
           category: item.category,
           title: `${room.code} - ${item.prompt}`,
-          description: note || null,
+          description: note || (value === "NA" ? "Item kritikal tidak dapat diverifikasi." : null),
           priority: priorityForItem(item.isCritical),
           status: "OPEN",
           assignedRole: assignedRoleForCategory(item.category),

@@ -8,8 +8,15 @@ import { BottomNav, MobileTopBar, PageFrame } from "@/components/app-shell";
 
 export const dynamic = "force-dynamic";
 
-export default async function InspectRoom({ params }: { params: Promise<{ roomId: string }> }) {
+export default async function InspectRoom({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ roomId: string }>;
+  searchParams?: Promise<{ error?: string }>;
+}) {
   const { roomId } = await params;
+  const errorMessage = (await searchParams)?.error;
   const [room, template] = await Promise.all([
     prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
     prisma.checklistTemplate.findUnique({
@@ -41,6 +48,12 @@ export default async function InspectRoom({ params }: { params: Promise<{ roomId
         <Link href={`/mobile/rooms/${room.id}`} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-muted">
           <ArrowLeft size={16} /> Kembali ke ruang
         </Link>
+
+        {errorMessage ? (
+          <div className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-900" role="alert">
+            {errorMessage}
+          </div>
+        ) : null}
 
         <form action={submitWeeklyInspection} className="space-y-5" encType="multipart/form-data">
           <input type="hidden" name="roomId" value={room.id} />
@@ -106,8 +119,8 @@ export default async function InspectRoom({ params }: { params: Promise<{ roomId
                         <textarea name={`note_${item.id}`} rows={2} className="rounded-2xl border border-border bg-card px-4 py-3 font-normal text-foreground outline-none focus:border-accent" placeholder="Contoh: AC hidup tapi tidak dingin, perlu cek filter." />
                       </label>
                       <label className="tap-target flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card px-4 py-3 text-sm font-bold text-muted">
-                        <Camera size={18} /> Foto temuan
-                        <input type="file" name={`photo_${item.id}`} accept="image/*" capture="environment" className="hidden" />
+                        <Camera size={18} /> Foto temuan wajib jika Tidak OK
+                        <input type="file" name={`photo_${item.id}`} accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" />
                       </label>
                     </div>
                   </fieldset>

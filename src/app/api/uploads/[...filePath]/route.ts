@@ -8,15 +8,15 @@ const allowedImageTypes: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".png": "image/png",
   ".webp": "image/webp",
-  ".gif": "image/gif",
 };
 
 export async function GET(_request: Request, { params }: { params: Promise<{ filePath: string[] }> }) {
   const { filePath } = await params;
   const uploadRoot = path.resolve(process.env.UPLOAD_DIR || "/tmp/classroom-ready-uploads");
   const requestedPath = path.resolve(uploadRoot, ...filePath);
+  const relativePath = path.relative(uploadRoot, requestedPath);
 
-  if (!requestedPath.startsWith(uploadRoot)) {
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     return new Response("Forbidden", { status: 403 });
   }
 
