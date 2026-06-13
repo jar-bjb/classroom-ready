@@ -1,0 +1,94 @@
+import Link from "next/link";
+import { AlertTriangle, ClipboardCheck, ExternalLink } from "lucide-react";
+import { prisma } from "@/lib/prisma";
+import { formatDateTime } from "@/lib/dates";
+import { getEffectiveRoomStatus, roomStatusLabel } from "@/lib/status";
+import { MetricCard } from "@/components/metric-card";
+import { StatusBadge } from "@/components/status-badge";
+
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const [rooms, latestInspections, openIssues] = await Promise.all([
+    prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } }),
+    prisma.inspectionSession.findMany({ orderBy: { submittedAt: "desc" }, take: 8, include: { room: true, inspector: true } }),
+    prisma.issue.findMany({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { room: true } }),
+  ]);
+
+  const effective = rooms.map((room) => ({ ...room, effectiveStatus: getEffectiveRoomStatus(room.status, room.certificationExpiresAt) }));
+  const certified = effective.filter((room) => room.effectiveStatus === "CERTIFIED").length;
+  const notes = effective.filter((room) => room.effectiveStatus === "CERTIFIED_WITH_NOTES").length;
+  const notReady = effective.filter((room) => ["NOT_CERTIFIED", "EXPIRED"].includes(room.effectiveStatus)).length;
+  const unchecked = effective.filter((room) => room.effectiveStatus === "UNCHECKED").length;
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
+      <header className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Coordinator Dashboard</p>
+          <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] lg:text-6xl">Weekly Room Certification</h1>
+          <p className="mt-2 max-w-2xl text-muted">Pantau status sertifikasi mingguan, issue terbuka, dan ruang yang perlu tindakan.</p>
+        </div>
+        <Link href="/mobile" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-4 text-sm font-black text-accent-foreground">
+          <ClipboardCheck size={18} /> Buka Mobile Petugas
+        </Link>
+      </header>
+
+      <section className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Certified" value={certified} tone="good" />
+        <MetricCard label="Catatan" value={notes} tone="warn" />
+        <MetricCard label="Bermasalah" value={notReady} tone="bad" />
+        <MetricCard label="Belum dicek" value={unchecked} />
+      </section>
+
+      <section className="mt-6 grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+        <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-black tracking-[-0.03em]">Status ruang</h2>
+            <Link href="/admin/rooms" className="inline-flex items-center gap-1 text-sm font-bold text-muted">Admin ruang <ExternalLink size={14} /></Link>
+          </div>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border">
+            {effective.map((room) => (
+              <Link key={room.id} href={`/mobile/rooms/${room.id}`} className="grid gap-3 border-b border-border bg-background px-4 py-3 last:border-b-0 md:grid-cols-[0.7fr_1fr_0.7fr_auto] md:items-center">
+                <div>
+                  <p className="font-num text-sm font-black">{room.code}</p>
+                  <p className="text-xs text-muted">{room.type.name}</p>
+                </div>
+                <p className="font-semibold">{room.name}</p>
+                <p className="text-sm text-muted">{roomStatusLabel(room.effectiveStatus)}</p>
+                <StatusBadge status={room.effectiveStatus} />
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-xl font-black tracking-[-0.03em]">Issue terbuka</h2>
+            <div className="mt-4 space-y-3">
+              {openIssues.length === 0 ? <p className="text-sm text-muted">Tidak ada issue terbuka.</p> : null}
+              {openIssues.map((issue) => (
+                <div key={issue.id} className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-sm">
+                  <p className="flex items-start gap-2 font-bold text-rose-950"><AlertTriangle size={16} className="mt-0.5 shrink-0" /> {issue.title}</p>
+                  <p className="mt-1 text-rose-800">{issue.room.code} • {issue.priority} • {issue.status}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-xl font-black tracking-[-0.03em]">Pemeriksaan terbaru</h2>
+            <div className="mt-4 space-y-3">
+              {latestInspections.map((inspection) => (
+                <div key={inspection.id} className="rounded-2xl border border-border bg-background p-3 text-sm">
+                  <p className="font-bold">{inspection.room.code} • {inspection.result}</p>
+                  <p className="text-muted">{formatDateTime(inspection.submittedAt)} oleh {inspection.inspector?.name || "-"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

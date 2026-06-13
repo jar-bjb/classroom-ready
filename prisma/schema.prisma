@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  INSPECTOR
+  COORDINATOR
+  FACILITY
+  IT_AV
+  MANAGEMENT
+}
+
+enum ChecklistCadence {
+  WEEKLY
+  DAILY
+  POST_CLASS
+  AD_HOC
+}
+
+enum TemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ResponseType {
+  OK_NOT_OK_NA
+  YES_NO_NA
+  TEXT
+  NUMBER
+}
+
+enum ResponseValue {
+  OK
+  NOT_OK
+  NA
+  YES
+  NO
+  TEXT
+  NUMBER
+}
+
+enum ItemCategory {
+  FACILITY
+  HVAC
+  LIGHTING
+  ELECTRICAL
+  AV
+  IT
+  CONSUMABLE
+  CLEANLINESS
+  SAFETY
+}
+
+enum InspectionType {
+  WEEKLY_CERTIFICATION
+  DAILY_OPENING_SWEEP
+  POST_CLASS_RESET
+  EMERGENCY_QUICK_CHECK
+}
+
+enum InspectionSessionStatus {
+  DRAFT
+  SUBMITTED
+  VOID
+}
+
+enum InspectionResult {
+  CERTIFIED
+  CERTIFIED_WITH_NOTES
+  NOT_CERTIFIED
+}
+
+enum RoomCertificationStatus {
+  UNCHECKED
+  CERTIFIED
+  CERTIFIED_WITH_NOTES
+  NOT_CERTIFIED
+  EXPIRED
+}
+
+enum IssuePriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  role        UserRole @default(INSPECTOR)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inspections InspectionSession[]
+  issues      Issue[]
+}
+
+model RoomType {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rooms Room[]
+}
+
+model Room {
+  id                     String                  @id @default(cuid())
+  code                   String                  @unique
+  name                   String
+  floor                  String?
+  location               String?
+  capacity               Int?
+  typeId                 String
+  status                 RoomCertificationStatus @default(UNCHECKED)
+  certificationExpiresAt DateTime?
+  lastInspectionId       String?
+  isActive               Boolean                 @default(true)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  type        RoomType            @relation(fields: [typeId], references: [id])
+  inspections InspectionSession[]
+  issues      Issue[]
+
+  @@index([status])
+  @@index([typeId])
+}
+
+model ChecklistTemplate {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  name        String
+  description String?
+  cadence     ChecklistCadence
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  versions ChecklistTemplateVersion[]
+}
+
+model ChecklistTemplateVersion {
+  id            String                @id @default(cuid())
+  templateId    String
+  version       Int
+  status        TemplateVersionStatus @default(DRAFT)
+  effectiveFrom DateTime              @default(now())
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sections   ChecklistSection[]
+  sessions   InspectionSession[]
+
+  @@unique([templateId, version])
+  @@index([status])
+}
+
+model ChecklistSection {
+  id          String @id @default(cuid())
+  versionId   String
+  title       String
+  description String?
+  sortOrder   Int
+
+  version ChecklistTemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  items   ChecklistItem[]
+
+  @@index([versionId, sortOrder])
+}
+
+model ChecklistItem {
+  id                     String       @id @default(cuid())
+  sectionId              String
+  code                   String
+  prompt                 String
+  helpText               String?
+  category               ItemCategory
+  responseType           ResponseType @default(OK_NOT_OK_NA)
+  isRequired             Boolean      @default(true)
+  isCritical             Boolean      @default(false)
+  requiresPhotoOnFail    Boolean      @default(false)
+  appliesToRoomTypeSlugs String[]     @default([])
+  sortOrder              Int
+  weight                 Int          @default(1)
+  isActive               Boolean      @default(true)
+
+  section   ChecklistSection     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  responses InspectionResponse[]
+
+  @@unique([sectionId, code])
+  @@index([category])
+  @@index([sectionId, sortOrder])
+}
+
+model InspectionSession {
+  id                String                  @id @default(cuid())
+  roomId            String
+  templateVersionId String
+  inspectorId       String?
+  type              InspectionType          @default(WEEKLY_CERTIFICATION)
+  status            InspectionSessionStatus @default(SUBMITTED)
+  result            InspectionResult
+  startedAt         DateTime                @default(now())
+  submittedAt       DateTime?
+  expiresAt         DateTime?
+  summaryNote       String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  room            Room                     @relation(fields: [roomId], references: [id])
+  templateVersion ChecklistTemplateVersion @relation(fields: [templateVersionId], references: [id])
+  inspector       User?                    @relation(fields: [inspectorId], references: [id])
+  responses       InspectionResponse[]
+  attachments     Attachment[]
+  issues          Issue[]
+
+  @@index([roomId, submittedAt])
+  @@index([templateVersionId])
+  @@index([result])
+}
+
+model InspectionResponse {
+  id        String        @id @default(cuid())
+  sessionId String
+  itemId    String
+  value     ResponseValue
+  note      String?
+  textValue String?
+  numberValue Decimal?
+  createdAt DateTime      @default(now())
+
+  session     InspectionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  item        ChecklistItem     @relation(fields: [itemId], references: [id])
+  attachments Attachment[]
+  issue       Issue?
+
+  @@unique([sessionId, itemId])
+  @@index([value])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  sessionId    String?
+  responseId   String?
+  issueId      String?
+  fileName     String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storagePath  String
+  publicPath   String
+  createdAt    DateTime @default(now())
+
+  session  InspectionSession?  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  response InspectionResponse? @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  issue    Issue?              @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId])
+  @@index([responseId])
+  @@index([issueId])
+}
+
+model Issue {
+  id          String        @id @default(cuid())
+  roomId      String
+  sessionId   String?
+  responseId  String?       @unique
+  category    ItemCategory
+  title       String
+  description String?
+  priority    IssuePriority @default(P3)
+  status      IssueStatus   @default(OPEN)
+  assignedRole UserRole?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  resolvedAt  DateTime?
+  resolutionNote String?
+
+  room        Room                @relation(fields: [roomId], references: [id])
+  session     InspectionSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  response    InspectionResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  createdBy   User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  attachments Attachment[]
+
+  @@index([roomId, status])
+  @@index([priority])
+  @@index([category])
+}
