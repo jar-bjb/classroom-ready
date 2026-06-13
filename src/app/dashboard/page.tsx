@@ -49,7 +49,7 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-border">
             {effective.map((room) => (
-              <Link key={room.id} href={`/mobile/rooms/${room.id}`} className="grid gap-3 border-b border-border bg-background px-4 py-3 last:border-b-0 md:grid-cols-[0.7fr_1fr_0.7fr_auto] md:items-center">
+              <Link key={room.id} href={`/admin/rooms/${room.id}`} className="grid gap-3 border-b border-border bg-background px-4 py-3 last:border-b-0 md:grid-cols-[0.7fr_1fr_0.7fr_auto] md:items-center">
                 <div>
                   <p className="font-num text-sm font-black">{room.code}</p>
                   <p className="text-xs text-muted">{room.type.name}</p>

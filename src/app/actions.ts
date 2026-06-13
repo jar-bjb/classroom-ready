@@ -204,9 +204,10 @@ export async function submitWeeklyInspection(formData: FormData) {
   });
 
   revalidatePath("/mobile");
-  revalidatePath(`/mobile/rooms/${roomId}`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
+  revalidatePath(`/admin/rooms/${roomId}`);
   revalidatePath("/dashboard");
-  redirect(`/mobile/rooms/${roomId}?submitted=1`);
+  redirect(`/mobile?submitted=1`);
 }
 
 function formString(formData: FormData, key: string) {

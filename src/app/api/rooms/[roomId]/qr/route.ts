@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
-  const url = `${baseUrl}/mobile/rooms/${room.id}`;
+  const url = `${baseUrl}/mobile/rooms/${room.id}/inspect`;
   const png = await QRCode.toBuffer(url, { width: 320, margin: 1, errorCorrectionLevel: "M" });
 
   return new Response(new Uint8Array(png), {

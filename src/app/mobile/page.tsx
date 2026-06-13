@@ -15,7 +15,6 @@ export default async function MobileHome() {
     orderBy: { code: "asc" },
     include: {
       type: true,
-      issues: { where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, select: { id: true } },
       inspections: { orderBy: { submittedAt: "desc" }, take: 1, include: { inspector: true } },
     },
   });
@@ -41,7 +40,6 @@ export default async function MobileHome() {
             <MetricCard label="Siap digunakan" value={certified} tone="good" />
             <MetricCard label="Perlu tindakan" value={notes + notReady} tone="warn" />
             <MetricCard label="Belum diperiksa" value={unchecked} />
-            <MetricCard label="Issue terbuka" value={withStatus.reduce((total, room) => total + room.issues.length, 0)} tone="bad" />
           </div>
           <div id="scan" className="mt-4 grid gap-3">
             <button className="tap-target flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-4 text-sm font-bold text-accent-foreground shadow-sm" type="button">
@@ -58,10 +56,8 @@ export default async function MobileHome() {
             <h2 className="text-lg font-black tracking-[-0.03em]">Daftar ruang</h2>
             <span className="text-sm text-muted">{rooms.length} ruang</span>
           </div>
-          {withStatus.map((room) => {
-            const hasOpenIssue = room.issues.length > 0;
-            return (
-              <Link key={room.id} href={`/mobile/rooms/${room.id}`} className="block rounded-3xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-accent/40">
+          {withStatus.map((room) => (
+              <Link key={room.id} href={`/mobile/rooms/${room.id}/inspect`} className="block rounded-3xl border border-border bg-card p-4 shadow-sm transition-colors hover:border-accent/40">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-num text-sm font-bold text-muted">{room.code}</p>
@@ -76,11 +72,9 @@ export default async function MobileHome() {
                     {room.certificationExpiresAt ? `Berlaku s/d ${formatDate(room.certificationExpiresAt)} ${isExpired(room.certificationExpiresAt) ? "(expired)" : ""}` : "Belum ada masa berlaku"}
                   </div>
                   <div>Terakhir dicek: {room.latestInspection?.inspector?.name || "-"}</div>
-                  {hasOpenIssue ? <div className="font-semibold text-rose-700">{room.issues.length} issue terbuka</div> : null}
                 </div>
               </Link>
-            );
-          })}
+          ))}
         </section>
       </PageFrame>
       <BottomNav />
