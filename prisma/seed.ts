@@ -69,6 +69,8 @@ const weeklySections = [
 ] as const;
 
 async function main() {
+  await prisma.notification.deleteMany();
+  await prisma.issueLog.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.issue.deleteMany();
   await prisma.inspectionResponse.deleteMany();
@@ -83,6 +85,9 @@ async function main() {
 
   const inspector = await prisma.user.create({
     data: { name: "Petugas Demo", email: "petugas@example.local", role: UserRole.INSPECTOR },
+  });
+  await prisma.user.create({
+    data: { name: "Supervisor Demo", email: "supervisor@example.local", role: UserRole.SUPERVISOR },
   });
   await prisma.user.create({
     data: { name: "Koordinator Demo", email: "koordinator@example.local", role: UserRole.COORDINATOR },

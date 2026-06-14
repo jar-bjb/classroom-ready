@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClipboardCheck, LayoutDashboard } from "lucide-react";
+import { ClipboardCheck, LayoutDashboard, ShieldCheck } from "lucide-react";
 
 export default function Home() {
   return (
@@ -10,13 +10,21 @@ export default function Home() {
         <p className="mt-3 max-w-2xl text-muted">Admin dan petugas dipisah jalurnya agar halaman kerja tidak saling tercampur.</p>
       </section>
 
-      <section className="mt-5 grid gap-4 md:grid-cols-2">
+      <section className="mt-5 grid gap-4 md:grid-cols-3">
         <Link href="/dashboard" className="rounded-3xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-accent/50">
           <div className="mb-5 inline-flex rounded-2xl bg-background p-3 text-accent">
             <LayoutDashboard size={24} />
           </div>
-          <h2 className="text-2xl font-black tracking-[-0.04em]">Admin / Supervisor</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">Supervisi dashboard, lihat detail laporan per kelas, serta kelola kelas dan fasilitas ruangan.</p>
+          <h2 className="text-2xl font-black tracking-[-0.04em]">Admin</h2>
+          <p className="mt-2 text-sm leading-6 text-muted">Supervisi dashboard, detail laporan, kelola kelas, dan export administrasi.</p>
+        </Link>
+
+        <Link href="/supervisor/issues" className="rounded-3xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-accent/50">
+          <div className="mb-5 inline-flex rounded-2xl bg-background p-3 text-accent">
+            <ShieldCheck size={24} />
+          </div>
+          <h2 className="text-2xl font-black tracking-[-0.04em]">Supervisor</h2>
+          <p className="mt-2 text-sm leading-6 text-muted">Tindak lanjuti issue terbuka, tandai diproses, dan close setelah perbaikan terverifikasi.</p>
         </Link>
 
         <Link href="/mobile" className="rounded-3xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-accent/50">

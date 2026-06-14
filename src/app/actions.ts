@@ -70,6 +70,20 @@ async function persistFile(file: File, sessionId: string, responseId?: string | 
   });
 }
 
+async function notifySupervisors(issueId: string, roomCode: string, title: string) {
+  const supervisors = await prisma.user.findMany({ where: { role: "SUPERVISOR", isActive: true }, select: { id: true } });
+  if (supervisors.length === 0) return;
+
+  await prisma.notification.createMany({
+    data: supervisors.map((supervisor) => ({
+      recipientId: supervisor.id,
+      issueId,
+      title: `Issue baru ${roomCode}`,
+      message: title,
+    })),
+  });
+}
+
 export async function submitWeeklyInspection(formData: FormData) {
   const roomId = String(formData.get("roomId") || "");
   const templateVersionId = String(formData.get("templateVersionId") || "");
@@ -173,13 +187,14 @@ export async function submitWeeklyInspection(formData: FormData) {
     });
 
     if (value === "NOT_OK" || (item.isCritical && value === "NA")) {
-      await prisma.issue.create({
+      const issueTitle = `${room.code} - ${item.prompt}`;
+      const issue = await prisma.issue.create({
         data: {
           roomId,
           sessionId: session.id,
           responseId: response.id,
           category: item.category,
-          title: `${room.code} - ${item.prompt}`,
+          title: issueTitle,
           description: note || (value === "NA" ? "Item kritikal tidak dapat diverifikasi." : null),
           priority: priorityForItem(item.isCritical),
           status: "OPEN",
@@ -187,6 +202,18 @@ export async function submitWeeklyInspection(formData: FormData) {
           createdById: inspector.id,
         },
       });
+
+      await prisma.issueLog.create({
+        data: {
+          issueId: issue.id,
+          actorId: inspector.id,
+          action: "ISSUE_CREATED",
+          newStatus: "OPEN",
+          note: note || "Issue dibuat otomatis dari hasil pemeriksaan petugas.",
+        },
+      });
+
+      await notifySupervisors(issue.id, room.code, issueTitle);
     }
   }
 
@@ -203,6 +230,7 @@ export async function submitWeeklyInspection(formData: FormData) {
   revalidatePath(`/mobile/rooms/${roomId}/inspect`);
   revalidatePath(`/admin/rooms/${roomId}`);
   revalidatePath("/dashboard");
+  revalidatePath("/supervisor/issues");
   redirect(`/mobile?submitted=1`);
 }
 
@@ -307,6 +335,81 @@ export async function deactivateInspector(formData: FormData) {
 
   revalidatePath("/admin/rooms");
   revalidatePath("/mobile");
+}
+
+async function requireActiveSupervisor(supervisorId: string) {
+  const supervisor = await prisma.user.findFirst({ where: { id: supervisorId, role: "SUPERVISOR", isActive: true } });
+  if (!supervisor) throw new Error("Supervisor tidak valid atau tidak aktif");
+  return supervisor;
+}
+
+export async function markIssueInProgress(formData: FormData) {
+  const issueId = formString(formData, "issueId");
+  const supervisorId = formString(formData, "supervisorId");
+  const note = formString(formData, "note");
+  if (!issueId || !supervisorId) throw new Error("Issue dan supervisor wajib dipilih");
+
+  const supervisor = await requireActiveSupervisor(supervisorId);
+  const issue = await prisma.issue.findUnique({ where: { id: issueId }, include: { room: true } });
+  if (!issue) throw new Error("Issue tidak ditemukan");
+  if (!["OPEN", "IN_PROGRESS"].includes(issue.status)) throw new Error("Issue ini sudah tidak terbuka");
+
+  await prisma.issue.update({ where: { id: issueId }, data: { status: "IN_PROGRESS" } });
+  await prisma.issueLog.create({
+    data: {
+      issueId,
+      actorId: supervisor.id,
+      action: "STATUS_CHANGED",
+      previousStatus: issue.status,
+      newStatus: "IN_PROGRESS",
+      note: note || "Supervisor menandai issue sedang diproses.",
+    },
+  });
+  await prisma.notification.updateMany({ where: { issueId, recipientId: supervisor.id, isRead: false }, data: { isRead: true, readAt: new Date() } });
+
+  revalidatePath("/supervisor/issues");
+  revalidatePath(`/admin/rooms/${issue.roomId}`);
+  revalidatePath("/admin/logs");
+  revalidatePath("/dashboard");
+}
+
+export async function resolveIssue(formData: FormData) {
+  const issueId = formString(formData, "issueId");
+  const supervisorId = formString(formData, "supervisorId");
+  const resolutionNote = formString(formData, "resolutionNote");
+  if (!issueId || !supervisorId) throw new Error("Issue dan supervisor wajib dipilih");
+  if (!resolutionNote) throw new Error("Catatan penyelesaian wajib diisi");
+
+  const supervisor = await requireActiveSupervisor(supervisorId);
+  const issue = await prisma.issue.findUnique({ where: { id: issueId }, include: { room: true } });
+  if (!issue) throw new Error("Issue tidak ditemukan");
+  if (!["OPEN", "IN_PROGRESS"].includes(issue.status)) throw new Error("Issue ini sudah ditutup");
+
+  await prisma.issue.update({
+    where: { id: issueId },
+    data: {
+      status: "RESOLVED",
+      resolvedAt: new Date(),
+      resolvedById: supervisor.id,
+      resolutionNote,
+    },
+  });
+  await prisma.issueLog.create({
+    data: {
+      issueId,
+      actorId: supervisor.id,
+      action: "ISSUE_RESOLVED",
+      previousStatus: issue.status,
+      newStatus: "RESOLVED",
+      note: resolutionNote,
+    },
+  });
+  await prisma.notification.updateMany({ where: { issueId, recipientId: supervisor.id, isRead: false }, data: { isRead: true, readAt: new Date() } });
+
+  revalidatePath("/supervisor/issues");
+  revalidatePath(`/admin/rooms/${issue.roomId}`);
+  revalidatePath("/admin/logs");
+  revalidatePath("/dashboard");
 }
 
 export async function updateRoomComponent(formData: FormData) {

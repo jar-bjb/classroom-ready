@@ -9,6 +9,7 @@ datasource db {
 
 enum UserRole {
   ADMIN
+  SUPERVISOR
   INSPECTOR
   COORDINATOR
   FACILITY
@@ -108,8 +109,11 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  inspections InspectionSession[]
-  issues      Issue[]
+  inspections   InspectionSession[]
+  createdIssues Issue[]        @relation("IssueCreatedBy")
+  resolvedIssues Issue[]       @relation("IssueResolvedBy")
+  issueLogs     IssueLog[]
+  notifications Notification[]
 }
 
 model RoomType {
@@ -316,6 +320,7 @@ model Issue {
   status      IssueStatus   @default(OPEN)
   assignedRole UserRole?
   createdById String?
+  resolvedById String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   resolvedAt  DateTime?
@@ -324,10 +329,48 @@ model Issue {
   room        Room                @relation(fields: [roomId], references: [id])
   session     InspectionSession?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   response    InspectionResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
-  createdBy   User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?               @relation("IssueCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy  User?               @relation("IssueResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
   attachments Attachment[]
+  logs        IssueLog[]
+  notifications Notification[]
 
   @@index([roomId, status])
   @@index([priority])
   @@index([category])
+  @@index([resolvedById])
+}
+
+model IssueLog {
+  id             String       @id @default(cuid())
+  issueId        String
+  actorId        String?
+  action         String
+  previousStatus IssueStatus?
+  newStatus      IssueStatus?
+  note           String?
+  createdAt      DateTime     @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([issueId, createdAt])
+  @@index([actorId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  issueId     String?
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+
+  recipient User   @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  issue     Issue? @relation(fields: [issueId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, isRead, createdAt])
+  @@index([issueId])
 }

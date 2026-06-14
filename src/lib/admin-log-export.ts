@@ -64,8 +64,10 @@ export async function getAdminLogData(filters: LogFilters = {}) {
       include: {
         room: true,
         createdBy: true,
+        resolvedBy: true,
         session: { include: { inspector: true } },
         response: { include: { item: true } },
+        logs: { orderBy: { createdAt: "asc" }, include: { actor: true } },
       },
     }),
   ]);
@@ -100,7 +102,9 @@ export function issueLogRows(issues: AdminLogIssue[]) {
     "Catatan Temuan": issue.description || "-",
     "Ditugaskan Ke": issue.assignedRole || "-",
     "Waktu Close": formatDateTime(issue.resolvedAt),
+    "Ditutup Oleh": issue.resolvedBy?.name || "-",
     "Catatan Close": issue.resolutionNote || "-",
+    "Log Lifecycle": issue.logs.map((log) => `${formatDateTime(log.createdAt)} ${log.actor?.name || "Sistem"}: ${log.action}${log.newStatus ? ` -> ${issueStatusLabel(log.newStatus)}` : ""}${log.note ? ` (${log.note})` : ""}`).join(" | ") || "-",
   }));
 }
 

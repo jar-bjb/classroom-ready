@@ -18,7 +18,7 @@ export default async function InspectRoom({
 }) {
   const { roomId } = await params;
   const errorMessage = (await searchParams)?.error;
-  const [room, template, inspectors] = await Promise.all([
+  const [room, template, inspectors, openIssues] = await Promise.all([
     prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
     prisma.checklistTemplate.findUnique({
       where: { key: "weekly-room-certification" },
@@ -43,6 +43,11 @@ export default async function InspectRoom({
       },
     }),
     prisma.user.findMany({ where: { role: "INSPECTOR", isActive: true }, orderBy: { name: "asc" } }),
+    prisma.issue.findMany({
+      where: { roomId, status: { in: ["OPEN", "IN_PROGRESS"] } },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
   ]);
 
   if (!room || !template?.versions[0]) notFound();
@@ -64,6 +69,20 @@ export default async function InspectRoom({
           <div className="mb-4 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-900" role="alert">
             {errorMessage}
           </div>
+        ) : null}
+
+        {openIssues.length > 0 ? (
+          <section className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+            <p className="font-black">Warning: masih ada issue terbuka di kelas ini.</p>
+            <p className="mt-1 text-amber-900">Cek ulang apakah sudah ditindaklanjuti namun belum di-close supervisor, atau memang belum ditindaklanjuti.</p>
+            <ul className="mt-3 space-y-2">
+              {openIssues.map((issue) => (
+                <li key={issue.id} className="rounded-2xl bg-white/70 p-3 font-semibold">
+                  {issue.title} <span className="font-normal text-amber-800">• {issue.status}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
         ) : null}
 
         <form action={submitWeeklyInspection} className="space-y-5" encType="multipart/form-data">
