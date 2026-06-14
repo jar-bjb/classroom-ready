@@ -1,5 +1,9 @@
+"use client";
+
+import Image from "next/image";
 import Link from "next/link";
 import { ClipboardList, FileSpreadsheet, LayoutDashboard } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -7,35 +11,77 @@ const navItems = [
   { href: "/admin/logs", label: "Log & Export", icon: FileSpreadsheet },
 ];
 
+type ThemeMode = "light" | "dark";
+
 export function AdminNav() {
+  const [theme, setTheme] = useState<ThemeMode>("dark");
+
+  useEffect(() => {
+    const saved = (window.localStorage.getItem("classroom-ready-theme") as ThemeMode | null) ||
+      (document.documentElement.dataset.theme as ThemeMode | undefined) ||
+      "dark";
+    applyTheme(saved);
+  }, []);
+
+  function applyTheme(nextTheme: ThemeMode) {
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("classroom-ready-theme", nextTheme);
+    setTheme(nextTheme);
+  }
+
   return (
-    <header className="border-b border-border bg-[color-mix(in_srgb,var(--sidebar)_97%,transparent)]">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:py-5">
-        <Link href="/dashboard" className="flex items-center gap-3 text-foreground no-underline">
-          <span className="relative block h-11 w-8 shrink-0 overflow-hidden rounded-[4px] bg-[#fff200] shadow-[0_8px_20px_rgba(0,0,0,.16)]">
-            <span className="absolute left-[8px] top-[7px] h-[25px] w-[16px] bg-[#ed1c24] [clip-path:polygon(43%_0,100%_0,67%_38%,100%_38%,28%_100%,44%_55%,0_55%)]" />
-            <span className="absolute left-[7px] top-[10px] z-0 h-[23px] w-[19px] bg-[repeating-linear-gradient(to_bottom,#00aeef_0_5px,transparent_5px_10px)] [clip-path:polygon(0_12%,25%_4%,50%_12%,75%_4%,100%_12%,100%_31%,75%_23%,50%_31%,25%_23%,0_31%,0_50%,25%_42%,50%_50%,75%_42%,100%_50%,100%_69%,75%_61%,50%_69%,25%_61%,0_69%)]" />
-          </span>
+    <aside className="jar-sidebar border-r border-border bg-[color-mix(in_srgb,var(--sidebar)_97%,transparent)]">
+      <div className="flex h-full flex-col p-[22px_18px]">
+        <Link href="/dashboard" className="mb-[30px] flex items-center gap-[13px] text-foreground no-underline">
+          <Image
+            src="/company-logo.jpg"
+            alt="Logo perusahaan"
+            width={46}
+            height={62}
+            priority
+            className="h-[62px] w-[46px] shrink-0 rounded-[5px] bg-white object-contain shadow-[0_8px_20px_rgba(0,0,0,.14)]"
+          />
           <span>
-            <span className="block text-[15px] font-semibold leading-tight tracking-[-0.02em] text-[var(--heading)]">Pemeriksaan Kelas</span>
-            <span className="block text-[10px] font-medium text-muted">UPDL Banjarbaru</span>
+            <span className="block text-[15px] font-semibold leading-[1.18] tracking-[-0.02em] text-[var(--heading)]">Pemeriksaan Kelas</span>
+            <span className="mt-[3px] block text-[10px] font-medium text-muted">UPDL Banjarbaru</span>
           </span>
         </Link>
-        <nav className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted">
+
+        <nav className="grid gap-[5px] text-sm font-medium text-muted before:mb-[3px] before:ml-2 before:text-[10px] before:font-semibold before:text-[var(--soft)] before:content-['Operasional']">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className="inline-flex items-center gap-2 rounded-[7px] border border-transparent px-3 py-2 hover:bg-[var(--surface3)] hover:text-[var(--heading)]"
+                className="inline-flex items-center gap-[9px] rounded-[7px] px-[10px] py-[9px] hover:bg-[var(--surface3)] hover:text-[var(--heading)]"
               >
                 <Icon size={16} /> {item.label}
               </Link>
             );
           })}
         </nav>
+
+        <div className="mt-auto border-t border-border pt-3">
+          <div className="text-[10px] font-semibold text-[var(--soft)]">Mode Tampilan</div>
+          <div className="mt-2 grid grid-cols-2 gap-1 rounded-[8px] border border-border bg-[var(--surface2)] p-1">
+            <button
+              type="button"
+              onClick={() => applyTheme("light")}
+              className={`rounded-[6px] px-2 py-[7px] text-[11px] font-semibold ${theme === "light" ? "bg-card text-[var(--heading)] shadow-sm" : "text-muted"}`}
+            >
+              ☼ Light
+            </button>
+            <button
+              type="button"
+              onClick={() => applyTheme("dark")}
+              className={`rounded-[6px] px-2 py-[7px] text-[11px] font-semibold ${theme === "dark" ? "bg-card text-[var(--heading)] shadow-sm" : "text-muted"}`}
+            >
+              ☾ Dark
+            </button>
+          </div>
+        </div>
       </div>
-    </header>
+    </aside>
   );
 }
