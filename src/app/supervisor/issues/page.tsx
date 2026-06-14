@@ -88,35 +88,29 @@ export default async function SupervisorIssuesPage() {
                 {issue.response?.item ? <p className="mt-2 text-sm text-muted">Item checklist: {issue.response.item.prompt}</p> : null}
               </div>
 
-              <div className="grid gap-3 lg:w-[360px]">
-                <form action={markIssueInProgress} className="rounded-2xl border border-border bg-background p-3">
-                  <input type="hidden" name="issueId" value={issue.id} />
+              <form className="grid gap-3 rounded-2xl border border-border bg-background p-3 lg:w-[360px]">
+                <input type="hidden" name="issueId" value={issue.id} />
+                <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
+                  <option value="">Pilih petugas tindak lanjut</option>
+                  {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
+                </select>
+                <input name="note" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" placeholder="Catatan proses (opsional)" />
+                <button
+                  formAction={markIssueInProgress}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-black hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={issue.status === "IN_PROGRESS"}
+                >
+                  <Clock3 size={16} /> Tandai Diproses
+                </button>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
                   <div className="grid gap-2">
-                    <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
-                      <option value="">Pilih petugas tindak lanjut</option>
-                      {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
-                    </select>
-                    <input name="note" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" placeholder="Catatan proses (opsional)" />
-                    <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-black hover:border-accent/50" disabled={issue.status === "IN_PROGRESS"}>
-                      <Clock3 size={16} /> Tandai Diproses
-                    </button>
-                  </div>
-                </form>
-
-                <form action={resolveIssue} className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-                  <input type="hidden" name="issueId" value={issue.id} />
-                  <div className="grid gap-2">
-                    <select name="supervisorId" className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" required>
-                      <option value="">Pilih petugas tindak lanjut</option>
-                      {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
-                    </select>
-                    <textarea name="resolutionNote" rows={3} className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Catatan penyelesaian wajib diisi" required />
-                    <button className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white">
+                    <textarea name="resolutionNote" rows={3} className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Catatan penyelesaian wajib diisi" />
+                    <button formAction={resolveIssue} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white">
                       <CheckCircle2 size={16} /> Close Issue
                     </button>
                   </div>
-                </form>
-              </div>
+                </div>
+              </form>
             </div>
 
             {issue.logs.length > 0 ? (
