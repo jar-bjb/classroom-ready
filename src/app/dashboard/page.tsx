@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/dates";
-import { getEffectiveRoomStatus, roomStatusLabel } from "@/lib/status";
+import { getEffectiveRoomStatus, inspectionResultLabel, roomStatusLabel } from "@/lib/status";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { AdminNav } from "@/components/admin-nav";
@@ -81,7 +81,7 @@ export default async function DashboardPage() {
             <div className="mt-4 space-y-3">
               {latestInspections.map((inspection) => (
                 <div key={inspection.id} className="rounded-2xl border border-border bg-background p-3 text-sm">
-                  <p className="font-bold">{inspection.room.code} • {inspection.result}</p>
+                  <p className="font-bold">{inspection.room.code} • {inspectionResultLabel(inspection.result)}</p>
                   <p className="text-muted">{formatDateTime(inspection.submittedAt)} oleh {inspection.inspector?.name || "-"}</p>
                 </div>
               ))}
