@@ -1,13 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f6f4ef;
-  --foreground: #17130f;
-  --card: #fffdf8;
-  --muted: #6f675d;
-  --border: #e5ded2;
-  --accent: #c56b1d;
-  --accent-foreground: #fffaf0;
+  --bg: #191816;
+  --app: #1b1a18;
+  --surface: #22211e;
+  --surface2: #282622;
+  --surface3: #302d28;
+  --app-dot: rgba(255, 255, 255, 0.06);
+  --text: #ece7df;
+  --heading: #fffaf1;
+  --muted: #a49c91;
+  --soft: #776f65;
+  --line: #33302b;
+  --primary: #e07855;
+  --primary2: #c96443;
+  --accent: #e6b15f;
+  --success: #7ca66d;
+  --warning: #d39a4d;
+  --danger: #d06a5a;
+  --info: #7e93bd;
+  --sidebar: #22211e;
+  --input: #25231f;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  --radius: 10px;
+  --background: var(--app);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --border: var(--line);
+  --accent-foreground: #fffaf1;
+  --font-ui: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-code: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @theme inline {
@@ -16,10 +38,10 @@
   --color-card: var(--card);
   --color-muted: var(--muted);
   --color-border: var(--border);
-  --color-accent: var(--accent);
+  --color-accent: var(--primary);
   --color-accent-foreground: var(--accent-foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
 }
 
 * {
@@ -27,14 +49,19 @@
 }
 
 html {
-  background: var(--background);
+  background: var(--bg);
 }
 
 body {
   min-height: 100vh;
-  background: radial-gradient(circle at top left, rgba(197, 107, 29, 0.10), transparent 28rem), var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background-color: var(--app);
+  background-image: radial-gradient(circle, var(--app-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -46,13 +73,138 @@ select {
 }
 
 ::selection {
-  background: rgba(197, 107, 29, 0.22);
+  background: rgba(224, 120, 85, 0.22);
 }
 
 .tap-target {
   min-height: 48px;
 }
 
-.font-num {
+.font-num,
+.font-mono,
+td:first-child,
+.badge,
+[class*="text-3xl"],
+[class*="text-4xl"] {
+  font-family: var(--font-code);
   font-variant-numeric: tabular-nums;
+}
+
+/* Dashboard-JAR visual compatibility layer */
+.rounded-3xl,
+.rounded-2xl,
+.rounded-xl {
+  border-radius: var(--radius) !important;
+}
+
+.shadow-sm,
+.shadow-md,
+.shadow-lg {
+  box-shadow: var(--shadow) !important;
+}
+
+.bg-card,
+.bg-background {
+  background-color: color-mix(in srgb, var(--surface) 90%, transparent) !important;
+}
+
+.border-border {
+  border-color: var(--line) !important;
+}
+
+.text-muted {
+  color: var(--muted) !important;
+}
+
+.text-foreground {
+  color: var(--text) !important;
+}
+
+.bg-accent {
+  background-color: var(--primary) !important;
+}
+
+.text-accent-foreground {
+  color: #fffaf1 !important;
+}
+
+.hover\:border-accent\/50:hover,
+.focus\:border-accent:focus {
+  border-color: rgba(224, 120, 85, 0.65) !important;
+}
+
+input,
+select,
+textarea {
+  background: var(--input) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--soft) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(224, 120, 85, 0.65) !important;
+  box-shadow: 0 0 0 3px rgba(224, 120, 85, 0.1);
+}
+
+.bg-emerald-50 {
+  background: rgba(91, 143, 97, 0.14) !important;
+}
+.border-emerald-200 {
+  border-color: rgba(91, 143, 97, 0.22) !important;
+}
+.text-emerald-900,
+.text-emerald-700 {
+  color: var(--success) !important;
+}
+
+.bg-amber-50,
+.bg-yellow-50 {
+  background: rgba(200, 145, 63, 0.15) !important;
+}
+.border-amber-200,
+.border-yellow-200 {
+  border-color: rgba(200, 145, 63, 0.26) !important;
+}
+.text-amber-900,
+.text-amber-800,
+.text-yellow-900,
+.text-yellow-800 {
+  color: var(--warning) !important;
+}
+
+.bg-rose-50,
+.bg-red-50 {
+  background: rgba(198, 90, 74, 0.15) !important;
+}
+.border-rose-100,
+.border-rose-200,
+.border-red-200 {
+  border-color: rgba(198, 90, 74, 0.26) !important;
+}
+.text-rose-950,
+.text-rose-900,
+.text-rose-800,
+.text-rose-700,
+.text-red-900,
+.text-red-700 {
+  color: var(--danger) !important;
+}
+
+.bg-white {
+  background: #fffaf1 !important;
+}
+
+@media print {
+  body {
+    background: white;
+    color: #171512;
+  }
 }
