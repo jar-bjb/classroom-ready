@@ -343,6 +343,19 @@ async function requireActiveSupervisor(supervisorId: string) {
   return supervisor;
 }
 
+async function markRoomReadyWhenNoActiveIssues(roomId: string) {
+  const activeIssueCount = await prisma.issue.count({
+    where: { roomId, status: { in: ["OPEN", "IN_PROGRESS"] } },
+  });
+
+  if (activeIssueCount === 0) {
+    await prisma.room.update({
+      where: { id: roomId },
+      data: { status: "CERTIFIED" },
+    });
+  }
+}
+
 export async function markIssueInProgress(formData: FormData) {
   const issueId = formString(formData, "issueId");
   const supervisorId = formString(formData, "supervisorId");
@@ -369,8 +382,10 @@ export async function markIssueInProgress(formData: FormData) {
 
   revalidatePath("/supervisor/issues");
   revalidatePath(`/admin/rooms/${issue.roomId}`);
+  revalidatePath("/admin/rooms");
   revalidatePath("/admin/logs");
   revalidatePath("/dashboard");
+  revalidatePath("/mobile");
 }
 
 export async function resolveIssue(formData: FormData) {
@@ -405,11 +420,14 @@ export async function resolveIssue(formData: FormData) {
     },
   });
   await prisma.notification.updateMany({ where: { issueId, recipientId: supervisor.id, isRead: false }, data: { isRead: true, readAt: new Date() } });
+  await markRoomReadyWhenNoActiveIssues(issue.roomId);
 
   revalidatePath("/supervisor/issues");
   revalidatePath(`/admin/rooms/${issue.roomId}`);
+  revalidatePath("/admin/rooms");
   revalidatePath("/admin/logs");
   revalidatePath("/dashboard");
+  revalidatePath("/mobile");
 }
 
 export async function updateRoomComponent(formData: FormData) {

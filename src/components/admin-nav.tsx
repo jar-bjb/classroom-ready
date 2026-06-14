@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ClipboardList, FileSpreadsheet, LayoutDashboard, ShieldCheck } from "lucide-react";
+import { ClipboardList, FileSpreadsheet, LayoutDashboard } from "lucide-react";
 
 export function AdminNav() {
   return (
@@ -16,9 +16,6 @@ export function AdminNav() {
         </Link>
         <Link href="/admin/logs" className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 hover:border-accent/50">
           <FileSpreadsheet size={16} /> Log & Export
-        </Link>
-        <Link href="/supervisor/issues" className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 hover:border-accent/50">
-          <ShieldCheck size={16} /> Supervisor
         </Link>
       </div>
     </nav>
