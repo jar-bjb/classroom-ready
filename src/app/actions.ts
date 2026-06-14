@@ -339,7 +339,7 @@ export async function deactivateInspector(formData: FormData) {
 
 async function requireActiveSupervisor(supervisorId: string) {
   const supervisor = await prisma.user.findFirst({ where: { id: supervisorId, role: "SUPERVISOR", isActive: true } });
-  if (!supervisor) throw new Error("Supervisor tidak valid atau tidak aktif");
+  if (!supervisor) throw new Error("Petugas tindak lanjut tidak valid atau tidak aktif");
   return supervisor;
 }
 

@@ -51,7 +51,7 @@ export default async function SupervisorIssuesPage() {
             <p className="mt-1 text-3xl font-black">{unreadNotifications}</p>
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Supervisor aktif</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Petugas tindak lanjut aktif</p>
             <p className="mt-1 text-3xl font-black">{supervisors.length}</p>
           </div>
         </div>
@@ -93,7 +93,7 @@ export default async function SupervisorIssuesPage() {
                   <input type="hidden" name="issueId" value={issue.id} />
                   <div className="grid gap-2">
                     <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
-                      <option value="">Pilih petugas</option>
+                      <option value="">Pilih petugas tindak lanjut</option>
                       {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
                     </select>
                     <input name="note" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" placeholder="Catatan proses (opsional)" />
@@ -107,7 +107,7 @@ export default async function SupervisorIssuesPage() {
                   <input type="hidden" name="issueId" value={issue.id} />
                   <div className="grid gap-2">
                     <select name="supervisorId" className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" required>
-                      <option value="">Pilih petugas</option>
+                      <option value="">Pilih petugas tindak lanjut</option>
                       {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
                     </select>
                     <textarea name="resolutionNote" rows={3} className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Catatan penyelesaian wajib diisi" required />
