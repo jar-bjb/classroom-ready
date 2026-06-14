@@ -307,18 +307,22 @@ export async function deleteRoom(formData: FormData) {
   revalidatePath("/mobile");
 }
 
-export async function createInspector(formData: FormData) {
-  const name = formString(formData, "name");
-  if (!name) throw new Error("Nama petugas wajib diisi");
-
-  await prisma.user.create({
+async function createUserWithRole(name: string, role: "INSPECTOR" | "SUPERVISOR") {
+  return prisma.user.create({
     data: {
       name,
       email: await uniqueInspectorEmail(name),
-      role: "INSPECTOR",
+      role,
       isActive: true,
     },
   });
+}
+
+export async function createInspector(formData: FormData) {
+  const name = formString(formData, "name");
+  if (!name) throw new Error("Nama petugas pemeriksa wajib diisi");
+
+  await createUserWithRole(name, "INSPECTOR");
 
   revalidatePath("/admin/rooms");
   revalidatePath("/mobile");
@@ -326,7 +330,7 @@ export async function createInspector(formData: FormData) {
 
 export async function deactivateInspector(formData: FormData) {
   const inspectorId = formString(formData, "inspectorId");
-  if (!inspectorId) throw new Error("Petugas wajib dipilih");
+  if (!inspectorId) throw new Error("Petugas pemeriksa wajib dipilih");
 
   await prisma.user.update({
     where: { id: inspectorId },
@@ -335,6 +339,29 @@ export async function deactivateInspector(formData: FormData) {
 
   revalidatePath("/admin/rooms");
   revalidatePath("/mobile");
+}
+
+export async function createSupervisor(formData: FormData) {
+  const name = formString(formData, "name");
+  if (!name) throw new Error("Nama petugas tindak lanjut wajib diisi");
+
+  await createUserWithRole(name, "SUPERVISOR");
+
+  revalidatePath("/admin/rooms");
+  revalidatePath("/supervisor/issues");
+}
+
+export async function deactivateSupervisor(formData: FormData) {
+  const supervisorId = formString(formData, "supervisorId");
+  if (!supervisorId) throw new Error("Petugas tindak lanjut wajib dipilih");
+
+  await prisma.user.update({
+    where: { id: supervisorId },
+    data: { isActive: false },
+  });
+
+  revalidatePath("/admin/rooms");
+  revalidatePath("/supervisor/issues");
 }
 
 async function requireActiveSupervisor(supervisorId: string) {
