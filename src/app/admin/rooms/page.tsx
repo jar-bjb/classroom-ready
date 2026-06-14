@@ -5,13 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { StatusBadge } from "@/components/status-badge";
 import { getEffectiveRoomStatus } from "@/lib/status";
 import { formatDate } from "@/lib/dates";
-import { createRoom, deleteRoom } from "@/app/actions";
+import { createInspector, createRoom, deactivateInspector, deleteRoom } from "@/app/actions";
 import { AdminNav } from "@/components/admin-nav";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminRoomsPage() {
-  const rooms = await prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } });
+  const [rooms, inspectors] = await Promise.all([
+    prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } }),
+    prisma.user.findMany({ where: { role: "INSPECTOR", isActive: true }, orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <>
@@ -34,6 +37,37 @@ export default async function AdminRoomsPage() {
           <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Simpan</button>
         </div>
       </form>
+
+      <section className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Petugas kelas</p>
+            <h2 className="mt-1 text-2xl font-black tracking-[-0.04em]">Nama petugas untuk dropdown mobile</h2>
+            <p className="mt-1 text-sm text-muted">Petugas di form pemeriksaan tinggal pilih nama, tanpa input email manual.</p>
+          </div>
+          <form action={createInspector} className="flex gap-2">
+            <input name="name" className="min-w-0 rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Nama petugas" required />
+            <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Tambah</button>
+          </form>
+        </div>
+        <div className="mt-4 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          {inspectors.length === 0 ? <p className="text-sm text-muted">Belum ada petugas aktif.</p> : null}
+          {inspectors.map((inspector) => (
+            <div key={inspector.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm">
+              <div>
+                <p className="font-bold">{inspector.name}</p>
+                <p className="text-xs text-muted">Aktif untuk pemeriksaan mobile</p>
+              </div>
+              <form action={deactivateInspector}>
+                <input type="hidden" name="inspectorId" value={inspector.id} />
+                <button className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-700" aria-label={`Nonaktifkan ${inspector.name}`}>
+                  <Trash2 size={16} />
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {rooms.map((room) => {

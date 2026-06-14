@@ -12,7 +12,6 @@ import { getSafeUploadExtension, validateUploadFile } from "@/lib/upload-policy"
 import type { ChecklistItem, InspectionResult, ItemCategory, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
 
 const validResponseValues = new Set<ResponseValue>(["OK", "NOT_OK", "NA"]);
-const inspectorEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function safeFileName(name: string, mimeType: string) {
   const extension = getSafeUploadExtension(mimeType);
@@ -74,16 +73,15 @@ async function persistFile(file: File, sessionId: string, responseId?: string | 
 export async function submitWeeklyInspection(formData: FormData) {
   const roomId = String(formData.get("roomId") || "");
   const templateVersionId = String(formData.get("templateVersionId") || "");
-  const inspectorName = String(formData.get("inspectorName") || "Petugas Pemeriksa").trim();
-  const inspectorEmail = String(formData.get("inspectorEmail") || "petugas@example.local").trim().toLowerCase();
+  const inspectorId = String(formData.get("inspectorId") || "").trim();
   const summaryNote = String(formData.get("summaryNote") || "").trim();
 
   if (!roomId || !templateVersionId) {
     throw new Error("Ruang dan template checklist wajib tersedia");
   }
 
-  if (!inspectorEmailPattern.test(inspectorEmail)) {
-    redirectWithFormError(roomId, "Email/ID petugas harus berbentuk email valid.");
+  if (!inspectorId) {
+    redirectWithFormError(roomId, "Nama petugas wajib dipilih dari daftar.");
   }
 
   const [room, templateVersion] = await Promise.all([
@@ -138,15 +136,13 @@ export async function submitWeeklyInspection(formData: FormData) {
   const roomStatus: RoomCertificationStatus = result;
   const expiresAt = addDays(new Date(), 7);
 
-  const inspector = await prisma.user.upsert({
-    where: { email: inspectorEmail },
-    update: { name: inspectorName || "Petugas Pemeriksa", isActive: true },
-    create: {
-      name: inspectorName || "Petugas Pemeriksa",
-      email: inspectorEmail,
-      role: "INSPECTOR",
-    },
+  const inspector = await prisma.user.findFirst({
+    where: { id: inspectorId, role: "INSPECTOR", isActive: true },
   });
+
+  if (!inspector) {
+    redirectWithFormError(roomId, "Petugas tidak ditemukan atau sudah tidak aktif.");
+  }
 
   const session = await prisma.inspectionSession.create({
     data: {
@@ -219,6 +215,31 @@ function formOptionalInt(formData: FormData, key: string) {
   return value ? Number(value) : null;
 }
 
+function inspectorEmailFromName(name: string) {
+  const slug = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 48);
+  return `${slug || "petugas"}@petugas.local`;
+}
+
+async function uniqueInspectorEmail(name: string) {
+  const baseEmail = inspectorEmailFromName(name);
+  const [local, domain] = baseEmail.split("@");
+  let candidate = baseEmail;
+  let suffix = 2;
+
+  while (await prisma.user.findUnique({ where: { email: candidate } })) {
+    candidate = `${local}.${suffix}@${domain}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
 function formCategory(formData: FormData): ItemCategory {
   const value = formString(formData, "category") as ItemCategory;
   const valid: ItemCategory[] = ["FACILITY", "HVAC", "LIGHTING", "ELECTRICAL", "AV", "IT", "CONSUMABLE", "CLEANLINESS", "SAFETY"];
@@ -254,6 +275,36 @@ export async function deleteRoom(formData: FormData) {
   const roomId = formString(formData, "roomId");
   if (!roomId) throw new Error("Room ID wajib ada");
   await prisma.room.update({ where: { id: roomId }, data: { isActive: false } });
+  revalidatePath("/admin/rooms");
+  revalidatePath("/mobile");
+}
+
+export async function createInspector(formData: FormData) {
+  const name = formString(formData, "name");
+  if (!name) throw new Error("Nama petugas wajib diisi");
+
+  await prisma.user.create({
+    data: {
+      name,
+      email: await uniqueInspectorEmail(name),
+      role: "INSPECTOR",
+      isActive: true,
+    },
+  });
+
+  revalidatePath("/admin/rooms");
+  revalidatePath("/mobile");
+}
+
+export async function deactivateInspector(formData: FormData) {
+  const inspectorId = formString(formData, "inspectorId");
+  if (!inspectorId) throw new Error("Petugas wajib dipilih");
+
+  await prisma.user.update({
+    where: { id: inspectorId },
+    data: { isActive: false },
+  });
+
   revalidatePath("/admin/rooms");
   revalidatePath("/mobile");
 }

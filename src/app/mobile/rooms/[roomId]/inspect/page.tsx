@@ -18,7 +18,7 @@ export default async function InspectRoom({
 }) {
   const { roomId } = await params;
   const errorMessage = (await searchParams)?.error;
-  const [room, template] = await Promise.all([
+  const [room, template, inspectors] = await Promise.all([
     prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
     prisma.checklistTemplate.findUnique({
       where: { key: "weekly-room-certification" },
@@ -42,6 +42,7 @@ export default async function InspectRoom({
         },
       },
     }),
+    prisma.user.findMany({ where: { role: "INSPECTOR", isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
   if (!room || !template?.versions[0]) notFound();
@@ -74,12 +75,18 @@ export default async function InspectRoom({
             <div className="mt-4 grid gap-3">
               <label className="grid gap-1 text-sm font-semibold">
                 Nama petugas
-                <input name="inspectorName" defaultValue="Petugas Demo" className="tap-target rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" required />
+                <select name="inspectorId" className="tap-target rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" required>
+                  <option value="">Pilih petugas</option>
+                  {inspectors.map((inspector) => (
+                    <option key={inspector.id} value={inspector.id}>{inspector.name}</option>
+                  ))}
+                </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold">
-                Email/ID petugas
-                <input name="inspectorEmail" defaultValue="petugas@example.local" className="tap-target rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" required />
-              </label>
+              {inspectors.length === 0 ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                  Belum ada petugas aktif. Admin perlu menambahkan nama petugas di menu Kelola Kelas.
+                </p>
+              ) : null}
             </div>
           </section>
 
