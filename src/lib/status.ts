@@ -20,7 +20,7 @@ export function roomStatusClass(status: string) {
   const classes: Record<string, string> = {
     CERTIFIED: "border-emerald-200 bg-emerald-50 text-emerald-800",
     CERTIFIED_WITH_NOTES: "border-amber-200 bg-amber-50 text-amber-800",
-    NOT_CERTIFIED: "border-rose-200 bg-rose-50 text-rose-800",
+    NOT_CERTIFIED: "border-amber-200 bg-amber-50 text-amber-800",
     EXPIRED: "border-zinc-200 bg-zinc-100 text-zinc-700",
     UNCHECKED: "border-slate-200 bg-slate-50 text-slate-700",
   };
