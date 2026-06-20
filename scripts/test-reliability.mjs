@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 
-const baseUrl = new URL(process.env.APP_BASE_URL ?? "http://127.0.0.1:3010");
+const baseUrl = new URL(process.env.APP_BASE_URL ?? "http://127.0.0.1:3020");
 const transport = baseUrl.protocol === "https:" ? https : http;
 const defaultPort = baseUrl.protocol === "https:" ? 443 : 80;
 const endpoints = ["/mobile", "/dashboard", "/admin/rooms", "/admin/templates"];

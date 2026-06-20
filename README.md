@@ -62,7 +62,7 @@ Variabel yang dipakai:
 
 - `DATABASE_URL`
   - Connection string PostgreSQL.
-  - Local default mengikuti port compose `5438`.
+  - Local host default mengikuti port compose `55438`.
   - Production container sebaiknya memakai hostname service Docker, contoh `db:5432`.
 - `NEXT_PUBLIC_APP_URL`
   - Base URL publik aplikasi.
@@ -77,24 +77,39 @@ Variabel yang dipakai:
 - `HOSTNAME`
   - Host bind Next.js di container. Compose memakai `0.0.0.0`.
 - `APP_BASE_URL`
-  - Opsional untuk scripts test (`test:security`, `test:reliability`). Default `http://127.0.0.1:3010`.
+  - Opsional untuk scripts test (`test:security`, `test:reliability`). Default `http://127.0.0.1:3010`; di VPS admjar gunakan `http://127.0.0.1:3020`.
 - `LOAD_TOTAL`, `LOAD_CONCURRENCY`
   - Opsional untuk `test:reliability`.
+- `CLASSROOM_APP_BIND`
+  - Bind port host untuk app container. Default sistem admjar: `127.0.0.1:3020`.
+- `CLASSROOM_DB_BIND`
+  - Bind port host untuk PostgreSQL jika perlu akses dari host. Default sistem admjar: `127.0.0.1:55438`.
+- `BASIC_AUTH_USER` dan `BASIC_AUTH_PASSWORD`
+  - Proteksi Basic Auth untuk route UI/admin/supervisor/mobile.
+  - Endpoint integrasi read-only `/api/integration/dashboard-summary` tetap terbuka untuk Dashboard JAR.
 
 Contoh `.env` development:
 
 ```env
-DATABASE_URL="postgresql://classroom_ready:classroom_ready_dev@localhost:5438/classroom_ready?schema=public"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-UPLOAD_DIR="./uploads"
+POSTGRES_USER=classroom_ready
+POSTGRES_PASSWORD=classroom_ready_dev_change_me
+POSTGRES_DB=classroom_ready
+DATABASE_URL="postgresql://classroom_ready:classroom_ready_dev_change_me@db:5432/classroom_ready?schema=public"
+NEXT_PUBLIC_APP_URL="http://127.0.0.1:3020"
+UPLOAD_DIR="/app/uploads"
+CLASSROOM_APP_BIND=127.0.0.1:3020
+CLASSROOM_DB_BIND=127.0.0.1:55438
 ```
 
 Contoh nilai production harus dibuat langsung di VPS dan jangan disimpan di repo/source zip:
 
 ```env
+POSTGRES_PASSWORD="[REDACTED]"
 DATABASE_URL="postgresql://classroom_ready:[REDACTED]@db:5432/classroom_ready?schema=public"
 NEXT_PUBLIC_APP_URL="https://domain-production"
 UPLOAD_DIR="/app/uploads"
+BASIC_AUTH_USER="[REDACTED]"
+BASIC_AUTH_PASSWORD="[REDACTED]"
 ```
 
 ## Setup local development
@@ -233,15 +248,15 @@ Compose default:
 
 - App container: `classroom-ready-app`.
 - DB container: `classroom-ready-db`.
-- PostgreSQL host port local-only: `127.0.0.1:5438`.
-- App host port local-only: `127.0.0.1:3010`.
+- PostgreSQL host port local-only: `127.0.0.1:55438`.
+- App host port local-only: `127.0.0.1:3020`.
 - Upload volume: `classroom_ready_uploads`.
 - DB volume: `classroom_ready_pg`.
 
 Buka:
 
 ```text
-http://127.0.0.1:3010
+http://127.0.0.1:3020
 ```
 
 Cek log:
@@ -270,8 +285,10 @@ Rekomendasi stack:
 - Docker Compose untuk app + PostgreSQL.
 - Caddy reverse proxy di host atau container global.
 - Database tetap private di Docker network; jangan expose PostgreSQL publik.
-- Port app sebaiknya hanya bind ke localhost, seperti compose saat ini `127.0.0.1:3010:3000`.
+- Port app sebaiknya hanya bind ke localhost, seperti compose saat ini `127.0.0.1:3020:3000`.
 - Upload foto disimpan di Docker volume atau bind mount host yang dibackup rutin.
+- Untuk sistem admjar, jangan pakai port `3010` karena sudah dipakai aplikasi lain.
+- Jangan expose route UI/admin/supervisor/mobile tanpa `BASIC_AUTH_USER` dan `BASIC_AUTH_PASSWORD`, kecuali sudah diganti auth/RBAC proper.
 
 Langkah deployment dasar:
 
@@ -307,7 +324,7 @@ Setelah deploy:
 ```bash
 docker compose ps
 docker compose logs --tail=100 app
-curl -I http://127.0.0.1:3010/mobile
+curl -I http://127.0.0.1:3020/mobile
 ```
 
 ## Database migration dan seed
@@ -426,13 +443,13 @@ npm run lint
 Security smoke test terhadap app yang sedang berjalan:
 
 ```bash
-APP_BASE_URL=http://127.0.0.1:3010 npm run test:security
+APP_BASE_URL=http://127.0.0.1:3020 npm run test:security
 ```
 
 Reliability smoke/load sederhana:
 
 ```bash
-APP_BASE_URL=http://127.0.0.1:3010 LOAD_TOTAL=120 LOAD_CONCURRENCY=12 npm run test:reliability
+APP_BASE_URL=http://127.0.0.1:3020 LOAD_TOTAL=120 LOAD_CONCURRENCY=12 npm run test:reliability
 ```
 
 Catatan: scripts test butuh app aktif dan database sudah siap.
@@ -528,7 +545,7 @@ Untuk production preview di VPS:
 
 ```bash
 docker compose up -d --build
-curl -I http://127.0.0.1:3010/mobile
+curl -I http://127.0.0.1:3020/mobile
 ```
 
 Route paling penting untuk QA:
