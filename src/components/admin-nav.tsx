@@ -11,6 +11,8 @@ const navItems = [
   { href: "/admin/logs", label: "Log & Export", icon: FileSpreadsheet },
 ];
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
+
 type ThemeMode = "light" | "dark";
 
 export function AdminNav() {
@@ -34,11 +36,12 @@ export function AdminNav() {
       <div className="flex h-full flex-col p-[22px_18px]">
         <Link href="/dashboard" className="mb-[30px] flex items-center gap-[13px] text-foreground no-underline">
           <Image
-            src="/company-logo.jpg"
+            src={`${basePath}/company-logo.jpg`}
             alt="Logo perusahaan"
             width={46}
             height={62}
             priority
+            unoptimized
             className="h-[62px] w-[46px] shrink-0 rounded-[5px] bg-white object-contain shadow-[0_8px_20px_rgba(0,0,0,.14)]"
           />
           <span>

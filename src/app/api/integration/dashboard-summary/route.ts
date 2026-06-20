@@ -4,6 +4,7 @@ import { getEffectiveRoomStatus, inspectionResultLabel, roomStatusLabel } from "
 export const dynamic = "force-dynamic";
 
 const activeIssueStatuses = ["OPEN", "IN_PROGRESS"] as const;
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +32,10 @@ function countBy<T extends string>(items: T[]) {
     acc[item] = (acc[item] || 0) + 1;
     return acc;
   }, {} as Record<T, number>);
+}
+
+function appPath(path: `/${string}`) {
+  return `${basePath}${path}`;
 }
 
 export function OPTIONS() {
@@ -96,8 +101,8 @@ export async function GET() {
         openIssuesCount: room.issues.length,
         priorityIssuesCount: room.issues.filter((issue) => ["P1", "P2"].includes(issue.priority)).length,
         links: {
-          report: `/admin/rooms/${room.id}`,
-          inspect: `/mobile/rooms/${room.id}/inspect`,
+          report: appPath(`/admin/rooms/${room.id}`),
+          inspect: appPath(`/mobile/rooms/${room.id}/inspect`),
         },
       };
     });
@@ -113,12 +118,12 @@ export async function GET() {
       generatedAt: new Date().toISOString(),
       source: "classroom-ready",
       links: {
-        dashboard: "/dashboard",
-        mobile: "/mobile",
-        supervisorInbox: "/supervisor/issues",
-        adminRooms: "/admin/rooms",
-        adminLogs: "/admin/logs",
-        templates: "/admin/templates",
+        dashboard: appPath("/dashboard"),
+        mobile: appPath("/mobile"),
+        supervisorInbox: appPath("/supervisor/issues"),
+        adminRooms: appPath("/admin/rooms"),
+        adminLogs: appPath("/admin/logs"),
+        templates: appPath("/admin/templates"),
       },
       summary: {
         totalRooms: roomRows.length,
@@ -141,7 +146,7 @@ export async function GET() {
         category: issue.category,
         createdAt: toIso(issue.createdAt),
         updatedAt: toIso(issue.updatedAt),
-        link: "/supervisor/issues",
+        link: appPath("/supervisor/issues"),
       })),
       latestInspections: latestInspections.map((inspection) => ({
         id: inspection.id,
@@ -151,7 +156,7 @@ export async function GET() {
         resultLabel: inspectionResultLabel(inspection.result),
         submittedAt: toIso(inspection.submittedAt),
         inspector: inspection.inspector?.name || null,
-        link: `/admin/rooms/${inspection.room.id}`,
+        link: appPath(`/admin/rooms/${inspection.room.id}`),
       })),
     });
   } catch (error) {

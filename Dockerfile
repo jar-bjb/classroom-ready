@@ -5,7 +5,9 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_BASE_PATH=""
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 # Needed because Next imports server routes during build; actual runtime DB URL comes from compose/env.
 ENV DATABASE_URL=postgresql://classroom_ready:classroom_ready_dev@db:5432/classroom_ready?schema=public
 COPY --from=deps /app/node_modules ./node_modules
@@ -15,8 +17,10 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
+ARG NEXT_PUBLIC_BASE_PATH=""
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/package.json /app/package-lock.json ./
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules

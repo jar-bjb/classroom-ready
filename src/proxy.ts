@@ -28,7 +28,12 @@ function applySecurityHeaders(response: NextResponse) {
 }
 
 function isPublicIntegrationRoute(request: NextRequest) {
-  return request.nextUrl.pathname === "/api/integration/dashboard-summary";
+  const basePath = request.nextUrl.basePath;
+  const pathname = basePath && request.nextUrl.pathname.startsWith(basePath)
+    ? request.nextUrl.pathname.slice(basePath.length) || "/"
+    : request.nextUrl.pathname;
+
+  return pathname === "/api/integration/dashboard-summary";
 }
 
 function isAuthorized(request: NextRequest) {
