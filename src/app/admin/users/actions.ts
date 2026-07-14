@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 import { generateActivationCode, hashToken, normalizeActivationCode } from "@/lib/session";
 
 const ROLES = ["INSPECTOR", "FOLLOWUP", "SUPERVISOR", "ADMIN"] as const;
@@ -33,6 +34,7 @@ async function releaseUsernameIfInactive(username: string, forUserId?: string): 
 }
 
 export async function createUserAccount(_prev: CreateUserState, formData: FormData): Promise<CreateUserState> {
+  await requireRole("ADMIN");
   const name = String(formData.get("name") || "").trim().slice(0, 200);
   const username = String(formData.get("username") || "").trim().toLowerCase().slice(0, 100);
   const roles = Array.from(
@@ -74,6 +76,7 @@ export async function createUserAccount(_prev: CreateUserState, formData: FormDa
 // Assign a username to a pre-existing account (created before login existed) and
 // issue its first activation code, so old petugas/supervisor records can log in.
 export async function assignUsername(_prev: CreateUserState, formData: FormData): Promise<CreateUserState> {
+  await requireRole("ADMIN");
   const userId = String(formData.get("userId") || "");
   const username = String(formData.get("username") || "").trim().toLowerCase().slice(0, 100);
   if (!userId) return { error: "User tidak valid.", code: null, username: null };
@@ -99,6 +102,7 @@ export async function assignUsername(_prev: CreateUserState, formData: FormData)
 }
 
 export async function regenerateActivationCode(_prev: CodeState, formData: FormData): Promise<CodeState> {
+  await requireRole("ADMIN");
   const userId = String(formData.get("userId") || "");
   if (!userId) return { error: "User tidak valid.", code: null };
   if (!(await prisma.user.findUnique({ where: { id: userId } }))) {
@@ -123,6 +127,7 @@ export async function regenerateActivationCode(_prev: CodeState, formData: FormD
 // Supervisor) without recreating it. The signed-in session keeps its old roles
 // until the user logs in again (the session cookie carries the role claims).
 export async function updateUserRoles(formData: FormData): Promise<void> {
+  await requireRole("ADMIN");
   const userId = String(formData.get("userId") || "");
   const roles = Array.from(
     new Set(
@@ -158,6 +163,7 @@ export async function updateUserRoles(formData: FormData): Promise<void> {
 }
 
 export async function setUserActive(formData: FormData): Promise<void> {
+  await requireRole("ADMIN");
   const userId = String(formData.get("userId") || "");
   const active = formData.get("active") === "true";
   if (userId) {

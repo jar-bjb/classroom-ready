@@ -6,6 +6,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getIssueViewer } from "@/lib/issue-access";
+import { requireRole } from "@/lib/authz";
+import { readSession } from "@/lib/auth";
+import { hasRole } from "@/lib/access";
 import { addDays } from "@/lib/dates";
 import { assignedRoleForCategory, priorityForItem } from "@/lib/status";
 import { getEffectiveChecklistItems } from "@/lib/checklist";
@@ -142,7 +145,13 @@ export async function submitWeeklyInspection(
   const roomId = String(formData.get("roomId") || "");
   const templateVersionId = String(formData.get("templateVersionId") || "");
   const submissionToken = String(formData.get("submissionToken") || "").trim();
-  const inspectorId = String(formData.get("inspectorId") || "").trim();
+  // Identity binding: a logged-in INSPECTOR always files as themselves — the
+  // dropdown value is ignored so nobody can submit an inspection under another
+  // petugas's name. Basic-auth kiosk mode (no session) and admin/supervisor
+  // helpers keep the submitted selection (the dropdown is the only signal there).
+  const session = await readSession();
+  const submittedInspectorId = String(formData.get("inspectorId") || "").trim();
+  const inspectorId = session && hasRole(session.roles, "INSPECTOR") ? session.sub : submittedInspectorId;
   const summaryNote = String(formData.get("summaryNote") || "").trim().slice(0, 5000);
 
   try {
@@ -384,6 +393,7 @@ function formCategory(formData: FormData, key = "category"): ItemCategory {
 }
 
 export async function createRoom(formData: FormData) {
+  await requireRole("ADMIN");
   const code = formString(formData, "code").toUpperCase();
   const name = formString(formData, "name");
   if (!code || !name) redirectWithAdminRoomsMessage("error", "Kode dan nama kelas wajib diisi.");
@@ -432,6 +442,7 @@ export async function createRoom(formData: FormData) {
 }
 
 export async function updateRoom(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   const code = formString(formData, "code").toUpperCase();
   const name = formString(formData, "name");
@@ -468,6 +479,7 @@ export async function updateRoom(formData: FormData) {
 }
 
 export async function updateRoomWithComponents(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   const code = formString(formData, "code").toUpperCase();
   const name = formString(formData, "name");
@@ -547,6 +559,7 @@ export async function updateRoomWithComponents(formData: FormData) {
 }
 
 export async function deleteRoom(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   if (!roomId) throw new Error("Room ID wajib ada");
   await prisma.room.update({ where: { id: roomId }, data: { isActive: false } });
@@ -569,6 +582,7 @@ async function createUserWithRole(name: string, role: "INSPECTOR" | "FOLLOWUP") 
 }
 
 export async function createInspector(formData: FormData) {
+  await requireRole("ADMIN");
   const name = formString(formData, "name");
   if (!name) throw new Error("Nama petugas pemeriksa wajib diisi");
 
@@ -579,6 +593,7 @@ export async function createInspector(formData: FormData) {
 }
 
 export async function deactivateInspector(formData: FormData) {
+  await requireRole("ADMIN");
   const inspectorId = formString(formData, "inspectorId");
   if (!inspectorId) throw new Error("Petugas pemeriksa wajib dipilih");
 
@@ -592,6 +607,7 @@ export async function deactivateInspector(formData: FormData) {
 }
 
 export async function createSupervisor(formData: FormData) {
+  await requireRole("ADMIN");
   const name = formString(formData, "name");
   if (!name) throw new Error("Nama petugas tindak lanjut wajib diisi");
 
@@ -602,6 +618,7 @@ export async function createSupervisor(formData: FormData) {
 }
 
 export async function deactivateSupervisor(formData: FormData) {
+  await requireRole("ADMIN");
   const supervisorId = formString(formData, "supervisorId");
   if (!supervisorId) throw new Error("Petugas tindak lanjut wajib dipilih");
 
@@ -722,6 +739,25 @@ export async function resolveIssue(formData: FormData) {
     },
   });
   await prisma.notification.updateMany({ where: { issueId, recipientId: supervisor.id, isRead: false }, data: { isRead: true, readAt: new Date() } });
+
+  // Notify Supervisors (the assigners) that the follow-up is done — the second
+  // half of their notification stream (they already got the "issue baru" notif
+  // on creation). Skip the resolver themselves if they also hold SUPERVISOR.
+  const supervisorsToNotify = await prisma.user.findMany({
+    where: { roles: { has: "SUPERVISOR" }, isActive: true, id: { not: supervisor.id } },
+    select: { id: true },
+  });
+  if (supervisorsToNotify.length > 0) {
+    await prisma.notification.createMany({
+      data: supervisorsToNotify.map((s) => ({
+        recipientId: s.id,
+        issueId,
+        title: `Tindak lanjut selesai ${issue.room.code}`,
+        message: `${issue.title} — diselesaikan oleh ${supervisor.name}.`,
+      })),
+    });
+  }
+
   await markRoomReadyWhenNoActiveIssues(issue.roomId);
 
   revalidatePath("/supervisor/issues");
@@ -781,6 +817,7 @@ export async function assignIssue(formData: FormData) {
 }
 
 export async function updateRoomComponent(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   const itemId = formString(formData, "itemId");
   if (!roomId || !itemId) throw new Error("Room/item ID wajib ada");
@@ -812,6 +849,7 @@ export async function updateRoomComponent(formData: FormData) {
 }
 
 export async function deleteRoomComponent(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   const itemId = formString(formData, "itemId");
   if (!roomId || !itemId) throw new Error("Room/item ID wajib ada");
@@ -827,6 +865,7 @@ export async function deleteRoomComponent(formData: FormData) {
 }
 
 export async function addRoomComponent(formData: FormData) {
+  await requireRole("ADMIN");
   const roomId = formString(formData, "roomId");
   const sectionId = formString(formData, "sectionId");
   const prompt = formString(formData, "prompt");
