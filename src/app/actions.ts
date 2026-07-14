@@ -637,12 +637,17 @@ async function requireActiveSupervisor(supervisorId: string) {
   return supervisor;
 }
 
-// Resolves who performs a status change on an issue. A FOLLOWUP-only session
-// always acts as itself — the form's supervisorId is ignored so it cannot
-// impersonate another officer; privileged viewers keep the dropdown choice.
+// Resolves who performs a status change on an issue. Only a Tindak Lanjut
+// officer may work an issue (viewer.canWork) — a Supervisor/Admin without the
+// FOLLOWUP capability can assign + monitor but not resolve. A logged-in officer
+// always acts as themselves (form supervisorId ignored → no impersonation);
+// legacy basic-auth kiosk picks the officer from the dropdown.
 async function requireIssueOfficer(formData: FormData) {
   const viewer = await getIssueViewer();
-  const officerId = viewer.restrictedToUserId ?? formString(formData, "supervisorId");
+  if (!viewer.canWork) {
+    throw new Error("Peran Anda tidak menindaklanjuti issue. Tindak lanjut dikerjakan petugas Tindak Lanjut.");
+  }
+  const officerId = viewer.userId ?? formString(formData, "supervisorId");
   if (!officerId) throw new Error("Petugas tindak lanjut wajib dipilih");
   const officer = await requireActiveSupervisor(officerId);
   return { viewer, officer };

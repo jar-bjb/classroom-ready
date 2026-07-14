@@ -3,6 +3,8 @@ import { ArrowLeft, Check, X } from "lucide-react";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { readSession } from "@/lib/auth";
+import { hasRole } from "@/lib/access";
 import { categoryLabel } from "@/lib/status";
 import { issueDisplayTitle } from "@/lib/issues";
 import { getEffectiveChecklistItems } from "@/lib/checklist";
@@ -51,6 +53,15 @@ export default async function InspectRoom({
       include: { response: { include: { item: true } } },
     }),
   ]);
+
+  // A logged-in INSPECTOR files as themselves (identity is bound server-side in
+  // submitWeeklyInspection); show the name locked instead of a name picker.
+  // Basic-auth kiosk (no session) keeps the dropdown.
+  const session = await readSession();
+  const lockedInspector =
+    session && hasRole(session.roles, "INSPECTOR")
+      ? inspectors.find((inspector) => inspector.id === session.sub) ?? null
+      : null;
 
   if (!room) redirect("/mobile?staleLink=1");
   if (!template?.versions[0]) notFound();
@@ -121,15 +132,26 @@ export default async function InspectRoom({
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Identitas pemeriksa</p>
             <div className="mt-4 grid gap-3">
-              <label className="grid gap-1 text-sm font-semibold">
-                Nama petugas
-                <select name="inspectorId" data-inspector-select className="tap-target rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" required>
-                  <option value="">Pilih petugas</option>
-                  {inspectors.map((inspector) => (
-                    <option key={inspector.id} value={inspector.id}>{inspector.name}</option>
-                  ))}
-                </select>
-              </label>
+              {lockedInspector ? (
+                <label className="grid gap-1 text-sm font-semibold">
+                  Nama petugas
+                  {/* Locked to the logged-in inspector. Keep data-inspector-select
+                      with a value so the client submit-gate stays satisfied. */}
+                  <input type="hidden" name="inspectorId" value={lockedInspector.id} data-inspector-select />
+                  <div className="tap-target flex items-center rounded-2xl border border-border bg-background px-4 py-3 font-normal text-muted">{lockedInspector.name}</div>
+                  <span className="text-xs font-normal text-muted">Laporan tercatat atas nama akun Anda.</span>
+                </label>
+              ) : (
+                <label className="grid gap-1 text-sm font-semibold">
+                  Nama petugas
+                  <select name="inspectorId" data-inspector-select className="tap-target rounded-2xl border border-border bg-background px-4 py-3 font-normal outline-none focus:border-accent" required>
+                    <option value="">Pilih petugas</option>
+                    {inspectors.map((inspector) => (
+                      <option key={inspector.id} value={inspector.id}>{inspector.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {inspectors.length === 0 ? (
                 <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
                   Belum ada petugas aktif. Admin perlu menambahkan nama petugas di menu Kelola Kelas.

@@ -59,6 +59,14 @@ export default async function SupervisorIssuesPage() {
 
   const assignedToMeCount = restrictedId ? issues.filter((issue) => issue.assignedToId === restrictedId).length : null;
 
+  // Supervisor board = can assign but not resolve; officer area = can resolve.
+  const supervisorOnly = viewer.canAssign && !viewer.canWork;
+  const heading = supervisorOnly
+    ? { eyebrow: "Supervisor", title: "Penugasan & Pemantauan", desc: "Tugaskan issue temuan ke petugas Tindak Lanjut, lalu pantau progres penyelesaiannya." }
+    : viewer.canAssign
+      ? { eyebrow: "Supervisor · Tindak Lanjut", title: "Issue Terbuka", desc: "Tugaskan issue ke petugas dan tindak lanjuti hingga selesai." }
+      : { eyebrow: "Tindak Lanjut", title: "Issue Terbuka", desc: "Tindak lanjuti issue dari pemeriksaan petugas, tandai diproses, lalu close setelah perbaikan terverifikasi." };
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
       <nav className="mb-5 flex items-center justify-between gap-3">
@@ -72,9 +80,9 @@ export default async function SupervisorIssuesPage() {
       </nav>
 
       <header className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Tindak Lanjut</p>
-        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Issue Terbuka</h1>
-        <p className="mt-2 max-w-2xl text-muted">Tindak lanjuti issue dari pemeriksaan petugas, tandai diproses, lalu close setelah perbaikan terverifikasi.</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{heading.eyebrow}</p>
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">{heading.title}</h1>
+        <p className="mt-2 max-w-2xl text-muted">{heading.desc}</p>
         {viewerUser ? (
           <p className="mt-2 text-sm font-bold text-muted">
             Login sebagai {viewerUser.name}
@@ -187,9 +195,10 @@ export default async function SupervisorIssuesPage() {
                 </form>
               ) : null}
 
+              {viewer.canWork ? (
               <form className="grid gap-3 rounded-2xl border border-border bg-background p-3">
                 <input type="hidden" name="issueId" value={issue.id} />
-                {restrictedId ? (
+                {viewer.userId ? (
                   <p className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted">Anda menindaklanjuti sebagai {viewerUser?.name || "petugas"}.</p>
                 ) : (
                   <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
@@ -216,6 +225,7 @@ export default async function SupervisorIssuesPage() {
                   </div>
                 </div>
               </form>
+              ) : null}
               </div>
             </div>
 
