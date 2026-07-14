@@ -1,9 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
-import { AlertTriangle, CheckCircle2, Clock3, Inbox, LayoutDashboard } from "lucide-react";
-import { markIssueInProgress, resolveIssue } from "@/app/actions";
+import { AlertTriangle, CheckCircle2, Clock3, Inbox, LayoutDashboard, UserCheck } from "lucide-react";
+import { assignIssue, markIssueInProgress, resolveIssue } from "@/app/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { LogoutButton } from "@/components/logout-button";
+import { getIssueViewer } from "@/lib/issue-access";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/dates";
 import { categoryLabel } from "@/lib/status";
@@ -21,23 +22,42 @@ function uploadSrc(publicPath: string) {
 }
 
 export default async function SupervisorIssuesPage() {
-  const [supervisors, issues, unreadNotifications] = await Promise.all([
+  // FOLLOWUP-only viewers see their own issues + the unassigned pool; Supervisor,
+  // Admin, and legacy basic-auth see (and can assign) everything.
+  const viewer = await getIssueViewer();
+  const restrictedId = viewer.restrictedToUserId;
+
+  const [supervisors, issues, unreadNotifications, viewerUser] = await Promise.all([
     prisma.user.findMany({ where: { roles: { has: "FOLLOWUP" }, isActive: true }, orderBy: { name: "asc" } }),
     prisma.issue.findMany({
-      where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
+      where: {
+        status: { in: ["OPEN", "IN_PROGRESS"] },
+        ...(restrictedId ? { OR: [{ assignedToId: null }, { assignedToId: restrictedId }] } : {}),
+      },
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       include: {
         room: true,
         createdBy: true,
+        assignedTo: true,
         attachments: { orderBy: { createdAt: "desc" } },
         session: { include: { inspector: true, attachments: { orderBy: { createdAt: "desc" } } } },
         response: { include: { item: true, attachments: { orderBy: { createdAt: "desc" } } } },
         logs: { orderBy: { createdAt: "desc" }, include: { actor: true } },
-        notifications: { where: { isRead: false } },
+        notifications: { where: { isRead: false, ...(restrictedId ? { recipientId: restrictedId } : {}) } },
       },
     }),
-    prisma.notification.count({ where: { isRead: false, recipient: { roles: { has: "FOLLOWUP" }, isActive: true } } }),
+    prisma.notification.count({
+      where: {
+        isRead: false,
+        ...(restrictedId
+          ? { recipientId: restrictedId }
+          : { recipient: { roles: { has: "FOLLOWUP" }, isActive: true } }),
+      },
+    }),
+    viewer.userId ? prisma.user.findUnique({ where: { id: viewer.userId } }) : Promise.resolve(null),
   ]);
+
+  const assignedToMeCount = restrictedId ? issues.filter((issue) => issue.assignedToId === restrictedId).length : null;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 lg:py-10">
@@ -55,6 +75,12 @@ export default async function SupervisorIssuesPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Tindak Lanjut</p>
         <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Issue Terbuka</h1>
         <p className="mt-2 max-w-2xl text-muted">Tindak lanjuti issue dari pemeriksaan petugas, tandai diproses, lalu close setelah perbaikan terverifikasi.</p>
+        {viewerUser ? (
+          <p className="mt-2 text-sm font-bold text-muted">
+            Login sebagai {viewerUser.name}
+            {restrictedId ? " — daftar menampilkan issue yang ditugaskan ke Anda dan issue yang belum ditugaskan." : null}
+          </p>
+        ) : null}
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border bg-background p-4">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Issue aktif</p>
@@ -65,8 +91,10 @@ export default async function SupervisorIssuesPage() {
             <p className="mt-1 text-3xl font-black">{unreadNotifications}</p>
           </div>
           <div className="rounded-2xl border border-border bg-background p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Petugas tindak lanjut aktif</p>
-            <p className="mt-1 text-3xl font-black">{supervisors.length}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
+              {assignedToMeCount === null ? "Petugas tindak lanjut aktif" : "Ditugaskan ke saya"}
+            </p>
+            <p className="mt-1 text-3xl font-black">{assignedToMeCount === null ? supervisors.length : assignedToMeCount}</p>
           </div>
         </div>
       </header>
@@ -102,6 +130,11 @@ export default async function SupervisorIssuesPage() {
                   <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-800"><AlertTriangle size={14} /> {issue.priority}</span>
                   <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-bold">{issueStatusLabel(issue.status)}</span>
                   <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-bold">{categoryLabel(issue.category)}</span>
+                  {issue.assignedTo ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-xs font-black text-sky-800"><UserCheck size={14} /> {issue.assignedTo.name}</span>
+                  ) : (
+                    <span className="rounded-full border border-dashed border-border bg-background px-3 py-1 text-xs font-bold text-muted">Belum ditugaskan</span>
+                  )}
                   {issue.notifications.length > 0 ? <span className="rounded-full bg-accent px-3 py-1 text-xs font-black text-accent-foreground">Notif baru</span> : null}
                 </div>
                 <h2 className="mt-3 text-2xl font-black tracking-[-0.04em]">{issueDisplayTitle(issue)}</h2>
@@ -139,12 +172,31 @@ export default async function SupervisorIssuesPage() {
                 ) : null}
               </div>
 
-              <form className="grid gap-3 rounded-2xl border border-border bg-background p-3 lg:w-[360px]">
+              <div className="grid gap-3 lg:w-[360px]">
+              {viewer.canAssign ? (
+                <form className="grid gap-2 rounded-2xl border border-border bg-background p-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Penugasan</p>
+                  <input type="hidden" name="issueId" value={issue.id} />
+                  <select name="assigneeId" defaultValue={issue.assignedToId ?? ""} className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent">
+                    <option value="">— Pool bersama (tanpa petugas) —</option>
+                    {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
+                  </select>
+                  <SubmitButton formAction={assignIssue} pendingLabel="Menugaskan…" className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-black hover:border-accent/50">
+                    <UserCheck size={16} /> Tugaskan
+                  </SubmitButton>
+                </form>
+              ) : null}
+
+              <form className="grid gap-3 rounded-2xl border border-border bg-background p-3">
                 <input type="hidden" name="issueId" value={issue.id} />
-                <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
-                  <option value="">Pilih petugas tindak lanjut</option>
-                  {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
-                </select>
+                {restrictedId ? (
+                  <p className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted">Anda menindaklanjuti sebagai {viewerUser?.name || "petugas"}.</p>
+                ) : (
+                  <select name="supervisorId" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" required>
+                    <option value="">Pilih petugas tindak lanjut</option>
+                    {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
+                  </select>
+                )}
                 <input name="note" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" placeholder="Catatan proses (opsional)" />
                 <SubmitButton
                   formAction={markIssueInProgress}
@@ -164,6 +216,7 @@ export default async function SupervisorIssuesPage() {
                   </div>
                 </div>
               </form>
+              </div>
             </div>
 
             {issue.logs.length > 0 ? (

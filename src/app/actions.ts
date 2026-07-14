@@ -5,6 +5,7 @@ import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getIssueViewer } from "@/lib/issue-access";
 import { addDays } from "@/lib/dates";
 import { assignedRoleForCategory, priorityForItem } from "@/lib/status";
 import { getEffectiveChecklistItems } from "@/lib/checklist";
@@ -619,6 +620,26 @@ async function requireActiveSupervisor(supervisorId: string) {
   return supervisor;
 }
 
+// Resolves who performs a status change on an issue. A FOLLOWUP-only session
+// always acts as itself — the form's supervisorId is ignored so it cannot
+// impersonate another officer; privileged viewers keep the dropdown choice.
+async function requireIssueOfficer(formData: FormData) {
+  const viewer = await getIssueViewer();
+  const officerId = viewer.restrictedToUserId ?? formString(formData, "supervisorId");
+  if (!officerId) throw new Error("Petugas tindak lanjut wajib dipilih");
+  const officer = await requireActiveSupervisor(officerId);
+  return { viewer, officer };
+}
+
+function assertIssueWorkableBy(
+  issue: { assignedToId: string | null },
+  viewer: { restrictedToUserId: string | null },
+) {
+  if (viewer.restrictedToUserId && issue.assignedToId && issue.assignedToId !== viewer.restrictedToUserId) {
+    throw new Error("Issue ini sudah ditugaskan ke petugas lain");
+  }
+}
+
 async function markRoomReadyWhenNoActiveIssues(roomId: string) {
   const activeIssueCount = await prisma.issue.count({
     where: { roomId, status: { in: ["OPEN", "IN_PROGRESS"] } },
@@ -634,16 +655,20 @@ async function markRoomReadyWhenNoActiveIssues(roomId: string) {
 
 export async function markIssueInProgress(formData: FormData) {
   const issueId = formString(formData, "issueId");
-  const supervisorId = formString(formData, "supervisorId");
   const note = formString(formData, "note");
-  if (!issueId || !supervisorId) throw new Error("Issue dan supervisor wajib dipilih");
+  if (!issueId) throw new Error("Issue wajib dipilih");
 
-  const supervisor = await requireActiveSupervisor(supervisorId);
+  const { viewer, officer: supervisor } = await requireIssueOfficer(formData);
   const issue = await prisma.issue.findUnique({ where: { id: issueId }, include: { room: true } });
   if (!issue) throw new Error("Issue tidak ditemukan");
   if (!["OPEN", "IN_PROGRESS"].includes(issue.status)) throw new Error("Issue ini sudah tidak terbuka");
+  assertIssueWorkableBy(issue, viewer);
 
-  await prisma.issue.update({ where: { id: issueId }, data: { status: "IN_PROGRESS" } });
+  // Working an unassigned issue claims it from the shared pool.
+  await prisma.issue.update({
+    where: { id: issueId },
+    data: { status: "IN_PROGRESS", assignedToId: issue.assignedToId ?? supervisor.id },
+  });
   await prisma.issueLog.create({
     data: {
       issueId,
@@ -666,15 +691,15 @@ export async function markIssueInProgress(formData: FormData) {
 
 export async function resolveIssue(formData: FormData) {
   const issueId = formString(formData, "issueId");
-  const supervisorId = formString(formData, "supervisorId");
   const resolutionNote = formString(formData, "resolutionNote");
-  if (!issueId || !supervisorId) throw new Error("Issue dan supervisor wajib dipilih");
+  if (!issueId) throw new Error("Issue wajib dipilih");
   if (!resolutionNote) throw new Error("Catatan penyelesaian wajib diisi");
 
-  const supervisor = await requireActiveSupervisor(supervisorId);
+  const { viewer, officer: supervisor } = await requireIssueOfficer(formData);
   const issue = await prisma.issue.findUnique({ where: { id: issueId }, include: { room: true } });
   if (!issue) throw new Error("Issue tidak ditemukan");
   if (!["OPEN", "IN_PROGRESS"].includes(issue.status)) throw new Error("Issue ini sudah ditutup");
+  assertIssueWorkableBy(issue, viewer);
 
   await prisma.issue.update({
     where: { id: issueId },
@@ -682,6 +707,7 @@ export async function resolveIssue(formData: FormData) {
       status: "RESOLVED",
       resolvedAt: new Date(),
       resolvedById: supervisor.id,
+      assignedToId: issue.assignedToId ?? supervisor.id,
       resolutionNote,
     },
   });
@@ -704,6 +730,54 @@ export async function resolveIssue(formData: FormData) {
   revalidatePath("/admin/logs");
   revalidatePath("/dashboard");
   revalidatePath("/mobile");
+}
+
+// Tahap 2: a Supervisor/Admin assigns an open issue to a specific Tindak
+// Lanjut officer (or returns it to the shared pool with an empty assigneeId).
+export async function assignIssue(formData: FormData) {
+  const issueId = formString(formData, "issueId");
+  const assigneeId = formString(formData, "assigneeId");
+  if (!issueId) throw new Error("Issue wajib dipilih");
+
+  const viewer = await getIssueViewer();
+  if (!viewer.canAssign) throw new Error("Hanya Supervisor atau Admin yang bisa mengatur penugasan");
+
+  const issue = await prisma.issue.findUnique({ where: { id: issueId }, include: { room: true, assignedTo: true } });
+  if (!issue) throw new Error("Issue tidak ditemukan");
+  if (!["OPEN", "IN_PROGRESS"].includes(issue.status)) throw new Error("Issue ini sudah tidak terbuka");
+
+  const assignee = assigneeId ? await requireActiveSupervisor(assigneeId) : null;
+  if ((assignee?.id ?? null) === issue.assignedToId) {
+    revalidatePath("/supervisor/issues");
+    return;
+  }
+
+  await prisma.issue.update({ where: { id: issueId }, data: { assignedToId: assignee?.id ?? null } });
+  await prisma.issueLog.create({
+    data: {
+      issueId,
+      actorId: viewer.userId,
+      action: "ISSUE_ASSIGNED",
+      note: assignee
+        ? `Ditugaskan ke ${assignee.name}${issue.assignedTo ? ` (sebelumnya ${issue.assignedTo.name})` : ""}.`
+        : `Penugasan${issue.assignedTo ? ` ke ${issue.assignedTo.name}` : ""} dibatalkan — kembali ke pool bersama.`,
+    },
+  });
+
+  if (assignee) {
+    await prisma.notification.create({
+      data: {
+        recipientId: assignee.id,
+        issueId,
+        title: `Penugasan issue ${issue.room.code}`,
+        message: issue.title,
+      },
+    });
+  }
+
+  revalidatePath("/supervisor/issues");
+  revalidatePath("/admin/logs");
+  revalidatePath("/dashboard");
 }
 
 export async function updateRoomComponent(formData: FormData) {

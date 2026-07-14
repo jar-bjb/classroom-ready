@@ -122,6 +122,7 @@ model User {
   inspections   InspectionSession[]
   createdIssues Issue[]        @relation("IssueCreatedBy")
   resolvedIssues Issue[]       @relation("IssueResolvedBy")
+  assignedIssues Issue[]       @relation("IssueAssignedTo")
   issueLogs     IssueLog[]
   notifications Notification[]
   sessions      Session[]
@@ -348,6 +349,7 @@ model Issue {
   priority    IssuePriority @default(P3)
   status      IssueStatus   @default(OPEN)
   assignedRole UserRole?
+  assignedToId String? // Tahap 2: petugas Tindak Lanjut yang ditugaskan; NULL = pool bersama
   createdById String?
   resolvedById String?
   createdAt   DateTime      @default(now())
@@ -360,6 +362,7 @@ model Issue {
   response    InspectionResponse? @relation(fields: [responseId], references: [id], onDelete: SetNull)
   createdBy   User?               @relation("IssueCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   resolvedBy  User?               @relation("IssueResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  assignedTo  User?               @relation("IssueAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   attachments Attachment[]
   logs        IssueLog[]
   notifications Notification[]
@@ -368,6 +371,7 @@ model Issue {
   @@index([priority])
   @@index([category])
   @@index([resolvedById])
+  @@index([assignedToId, status])
 }
 
 model IssueLog {
