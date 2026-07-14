@@ -7,14 +7,34 @@ import { getEffectiveRoomStatus } from "@/lib/status";
 import { formatDate } from "@/lib/dates";
 import { createInspector, createRoom, createSupervisor, deactivateInspector, deactivateSupervisor, deleteRoom } from "@/app/actions";
 import { AdminNav } from "@/components/admin-nav";
+import { SubmitButton } from "@/components/submit-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminRoomsPage() {
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim().replace(/\/$/, "") || "";
+
+type AdminRoomsSearchParams = {
+  error?: string | string[];
+  success?: string | string[];
+};
+
+function appPath(pathname: string) {
+  const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return `${basePath}${normalizedPath}`;
+}
+
+function firstParam(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function AdminRoomsPage({ searchParams }: { searchParams?: Promise<AdminRoomsSearchParams> }) {
+  const messageParams = (await searchParams) || {};
+  const errorMessage = firstParam(messageParams.error);
+  const successMessage = firstParam(messageParams.success);
   const [rooms, inspectors, supervisors] = await Promise.all([
     prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } }),
-    prisma.user.findMany({ where: { role: "INSPECTOR", isActive: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({ where: { role: "SUPERVISOR", isActive: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { roles: { has: "INSPECTOR" }, isActive: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { roles: { has: "FOLLOWUP" }, isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -24,8 +44,20 @@ export default async function AdminRoomsPage() {
       <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Admin</p>
         <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Kelola Kelas</h1>
-        <p className="mt-2 text-muted">Tambah/hapus kelas dan edit fasilitas atau komponen pemeriksaan khusus per kelas.</p>
+        <p className="mt-2 text-muted">Tambah, edit, atau nonaktifkan kelas serta kelola fasilitas pemeriksaan khusus per kelas.</p>
       </div>
+
+      {errorMessage ? (
+        <div className="mt-5 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-900" role="alert">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="mt-5 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-900" role="status">
+          {successMessage}
+        </div>
+      ) : null}
 
       <form action={createRoom} className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2 font-black"><Plus size={18} /> Tambah kelas</div>
@@ -35,7 +67,7 @@ export default async function AdminRoomsPage() {
           <input name="floor" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Lantai" />
           <input name="capacity" type="number" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Kapasitas" />
           <input name="location" className="rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Lokasi/gedung" />
-          <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Simpan</button>
+          <SubmitButton className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground" pendingLabel="Menyimpan…">Simpan</SubmitButton>
         </div>
       </form>
 
@@ -48,7 +80,7 @@ export default async function AdminRoomsPage() {
           </div>
           <form action={createInspector} className="flex gap-2">
             <input name="name" className="min-w-0 rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Nama petugas pemeriksa" required />
-            <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Tambah</button>
+            <SubmitButton className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground" pendingLabel="Menambah…">Tambah</SubmitButton>
           </form>
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
@@ -61,9 +93,13 @@ export default async function AdminRoomsPage() {
               </div>
               <form action={deactivateInspector}>
                 <input type="hidden" name="inspectorId" value={inspector.id} />
-                <button className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-700" aria-label={`Nonaktifkan ${inspector.name}`}>
+                <SubmitButton
+                  className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-700"
+                  aria-label={`Nonaktifkan ${inspector.name}`}
+                  confirmMessage={`Nonaktifkan petugas pemeriksa ${inspector.name}?`}
+                >
                   <Trash2 size={16} />
-                </button>
+                </SubmitButton>
               </form>
             </div>
           ))}
@@ -79,7 +115,7 @@ export default async function AdminRoomsPage() {
           </div>
           <form action={createSupervisor} className="flex gap-2">
             <input name="name" className="min-w-0 rounded-2xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-accent" placeholder="Nama petugas tindak lanjut" required />
-            <button className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">Tambah</button>
+            <SubmitButton className="rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground" pendingLabel="Menambah…">Tambah</SubmitButton>
           </form>
         </div>
         <div className="mt-4 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
@@ -92,9 +128,13 @@ export default async function AdminRoomsPage() {
               </div>
               <form action={deactivateSupervisor}>
                 <input type="hidden" name="supervisorId" value={supervisor.id} />
-                <button className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-700" aria-label={`Nonaktifkan ${supervisor.name}`}>
+                <SubmitButton
+                  className="rounded-xl border border-rose-200 bg-rose-50 p-2 text-rose-700"
+                  aria-label={`Nonaktifkan ${supervisor.name}`}
+                  confirmMessage={`Nonaktifkan petugas tindak lanjut ${supervisor.name}?`}
+                >
                   <Trash2 size={16} />
-                </button>
+                </SubmitButton>
               </form>
             </div>
           ))}
@@ -114,17 +154,21 @@ export default async function AdminRoomsPage() {
                 </div>
                 <StatusBadge status={status} />
               </div>
-              <Image src={`/api/rooms/${room.id}/qr`} alt={`QR ${room.code}`} width={144} height={144} className="mt-5 rounded-2xl border border-border bg-white p-3" unoptimized />
+              <Image src={appPath(`/api/rooms/${room.id}/qr`)} alt={`QR ${room.code}`} width={144} height={144} className="mt-5 rounded-2xl border border-border bg-white p-3" unoptimized />
               <p className="mt-3 text-sm text-muted">{room.certificationExpiresAt ? `Berlaku s/d ${formatDate(room.certificationExpiresAt)}` : "Belum diperiksa"}</p>
               <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
                 <Link href={`/admin/rooms/${room.id}/edit`} className="inline-flex items-center justify-center rounded-2xl bg-accent px-4 py-3 text-sm font-black text-accent-foreground">
-                  Edit kelas
+                  Edit data/komponen
                 </Link>
                 <form action={deleteRoom}>
                   <input type="hidden" name="roomId" value={room.id} />
-                  <button className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700" aria-label={`Hapus ${room.code}`}>
-                    <Trash2 size={18} />
-                  </button>
+                  <SubmitButton
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+                    aria-label={`Nonaktifkan ${room.code}`}
+                    confirmMessage={`Nonaktifkan kelas ${room.code}? Kelas akan hilang dari daftar aktif.`}
+                  >
+                    <Trash2 size={18} /> Nonaktifkan
+                  </SubmitButton>
                 </form>
               </div>
             </article>

@@ -4,11 +4,25 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Camera, QrCode } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { categoryLabel, getEffectiveRoomStatus, inspectionResultLabel } from "@/lib/status";
+import { issueDisplayTitle } from "@/lib/issues";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { StatusBadge } from "@/components/status-badge";
 import { AdminNav } from "@/components/admin-nav";
 
 export const dynamic = "force-dynamic";
+
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim().replace(/\/$/, "") || "";
+
+function uploadSrc(publicPath: string) {
+  if (publicPath.startsWith("http://") || publicPath.startsWith("https://")) return publicPath;
+  if (basePath && publicPath.startsWith(`${basePath}/`)) return publicPath;
+  return publicPath.startsWith("/") ? `${basePath}${publicPath}` : `${basePath}/${publicPath}`;
+}
+
+function appPath(pathname: string) {
+  const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return `${basePath}${normalizedPath}`;
+}
 
 export default async function RoomReportPage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
@@ -16,11 +30,19 @@ export default async function RoomReportPage({ params }: { params: Promise<{ roo
     where: { id: roomId },
     include: {
       type: true,
-      issues: { where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, orderBy: { createdAt: "desc" } },
+      issues: {
+        where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
+        orderBy: { createdAt: "desc" },
+        include: { response: { include: { item: true } } },
+      },
       inspections: {
         orderBy: { submittedAt: "desc" },
         take: 10,
-        include: { inspector: true, responses: { where: { value: "NOT_OK" }, include: { item: true } } },
+        include: {
+          inspector: true,
+          attachments: { orderBy: { createdAt: "desc" } },
+          responses: { where: { value: "NOT_OK" }, include: { item: true } },
+        },
       },
     },
   });
@@ -65,7 +87,7 @@ export default async function RoomReportPage({ params }: { params: Promise<{ roo
             <div className="mt-3 space-y-3">
               {room.issues.map((issue) => (
                 <div key={issue.id} className="rounded-2xl bg-white/70 p-3 text-sm">
-                  <p className="font-bold text-rose-950">{issue.title}</p>
+                  <p className="font-bold text-rose-950">{issueDisplayTitle(issue)}</p>
                   <p className="text-rose-800">{categoryLabel(issue.category)} • {issue.priority} • {issue.status}</p>
                 </div>
               ))}
@@ -92,13 +114,39 @@ export default async function RoomReportPage({ params }: { params: Promise<{ roo
                   ))}
                 </ul>
               ) : null}
+              {inspection.attachments.length > 0 ? (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {inspection.attachments.map((attachment) => (
+                    <a
+                      key={attachment.id}
+                      href={uploadSrc(attachment.publicPath)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group overflow-hidden rounded-2xl border border-border bg-background"
+                    >
+                      <Image
+                        src={uploadSrc(attachment.publicPath)}
+                        alt={attachment.caption || `Foto pemeriksaan ${room.code}`}
+                        width={360}
+                        height={240}
+                        className="h-36 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                        unoptimized
+                      />
+                      <div className="p-3 text-xs text-muted">
+                        <p className="font-bold text-foreground">{attachment.caption || "Foto pendukung pemeriksaan"}</p>
+                        <p className="mt-1">{attachment.originalName}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </article>
           ))}
         </section>
 
         <section className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-sm">
           <h2 className="font-black tracking-[-0.02em]">QR Petugas</h2>
-          <Image src={`/api/rooms/${room.id}/qr`} alt={`QR ${room.code}`} width={112} height={112} className="mt-3 rounded-2xl border border-border bg-white p-2" unoptimized />
+          <Image src={appPath(`/api/rooms/${room.id}/qr`)} alt={`QR ${room.code}`} width={112} height={112} className="mt-3 rounded-2xl border border-border bg-white p-2" unoptimized />
           <p className="mt-2 flex items-center gap-2 text-xs text-muted"><QrCode size={14} /> QR untuk ditempel di kelas dan dipindai petugas.</p>
         </section>
       </main>

@@ -92,6 +92,12 @@ body {
   letter-spacing: -0.01em;
 }
 
+@supports (padding: max(0px)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 body:has(.jar-sidebar) {
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
@@ -222,6 +228,110 @@ select:focus,
 textarea:focus {
   border-color: rgba(224, 120, 85, 0.65) !important;
   box-shadow: 0 0 0 3px rgba(224, 120, 85, 0.1);
+}
+
+.inspection-choice {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface3) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.875rem;
+  font-weight: 900;
+  gap: 0.5rem;
+  justify-content: center;
+  min-height: 54px;
+  padding: 0.75rem 0.5rem;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.inspection-item {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.inspection-item[data-missing="true"] {
+  border-color: rgba(198, 90, 74, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(198, 90, 74, 0.12) !important;
+}
+
+.inspection-note summary {
+  list-style: none;
+}
+
+.inspection-note summary::-webkit-details-marker {
+  display: none;
+}
+
+.inspection-note summary::after {
+  content: "+";
+  float: right;
+  font-weight: 900;
+}
+
+.inspection-note[open] summary::after {
+  content: "-";
+}
+
+.inspection-progress-track {
+  background: color-mix(in srgb, var(--surface3) 82%, transparent);
+}
+
+.inspection-choice-ok {
+  border-color: rgba(124, 166, 109, 0.45);
+  color: color-mix(in srgb, var(--success) 82%, #fffaf1);
+}
+
+.inspection-choice-bad {
+  border-color: rgba(208, 106, 90, 0.45);
+  color: color-mix(in srgb, var(--danger) 84%, #fffaf1);
+}
+
+.inspection-choice-na {
+  border-color: rgba(164, 156, 145, 0.45);
+  color: var(--text);
+}
+
+.inspection-choice:has(input:checked) {
+  box-shadow: inset 0 0 0 2px currentColor, 0 0 0 3px rgba(224, 120, 85, 0.12);
+}
+
+.inspection-choice-ok:has(input:checked) {
+  background: rgba(124, 166, 109, 0.24);
+  border-color: var(--success);
+  color: #dff4d7;
+}
+
+.inspection-choice-bad:has(input:checked) {
+  background: rgba(208, 106, 90, 0.24);
+  border-color: var(--danger);
+  color: #ffd7d0;
+}
+
+.inspection-choice-na:has(input:checked) {
+  background: rgba(164, 156, 145, 0.22);
+  border-color: var(--muted);
+  color: #fffaf1;
+}
+
+html[data-theme="light"] .inspection-choice {
+  background: #fffdf9;
+}
+
+html[data-theme="light"] .inspection-choice-ok:has(input:checked) {
+  background: #eaf6e5;
+  color: #225a2f;
+}
+
+html[data-theme="light"] .inspection-choice-bad:has(input:checked) {
+  background: #ffebe6;
+  color: #8e2b1f;
+}
+
+html[data-theme="light"] .inspection-choice-na:has(input:checked) {
+  background: #ece8df;
+  color: #2c2924;
 }
 
 .bg-emerald-50 {

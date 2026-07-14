@@ -15,6 +15,7 @@ enum UserRole {
   FACILITY
   IT_AV
   MANAGEMENT
+  FOLLOWUP
 }
 
 enum ChecklistCadence {
@@ -104,8 +105,17 @@ model User {
   id          String   @id @default(cuid())
   name        String
   email       String   @unique
-  role        UserRole @default(INSPECTOR)
+  username    String?  @unique
+  role        UserRole @default(INSPECTOR) // primary/legacy role; capabilities live in `roles`
+  roles       UserRole[] // capability set (a person can be e.g. INSPECTOR + SUPERVISOR)
   isActive    Boolean  @default(true)
+
+  // Auth (nullable: an account can exist before it can log in). Password is set
+  // by the user via a one-time activation code; the code itself is stored hashed.
+  passwordHash        String?
+  activationCodeHash  String?
+  activationExpiresAt DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -114,6 +124,24 @@ model User {
   resolvedIssues Issue[]       @relation("IssueResolvedBy")
   issueLogs     IssueLog[]
   notifications Notification[]
+  sessions      Session[]
+}
+
+// Server-side session records. Backs revocable mobile refresh tokens; may also
+// back web sessions when immediate revocation is required. Only the token hash
+// is stored, never the token itself.
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique
+  kind        String // "web" | "mobile"
+  deviceLabel String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 model RoomType {
@@ -251,6 +279,7 @@ model InspectionSession {
   submittedAt       DateTime?
   expiresAt         DateTime?
   summaryNote       String?
+  submissionToken   String?                 @unique
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 

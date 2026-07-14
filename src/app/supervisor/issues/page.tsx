@@ -1,29 +1,42 @@
 import Link from "next/link";
+import Image from "next/image";
 import { AlertTriangle, CheckCircle2, Clock3, Inbox, LayoutDashboard } from "lucide-react";
 import { markIssueInProgress, resolveIssue } from "@/app/actions";
+import { SubmitButton } from "@/components/submit-button";
+import { LogoutButton } from "@/components/logout-button";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/dates";
 import { categoryLabel } from "@/lib/status";
 import { issueStatusLabel } from "@/lib/admin-log-export";
+import { issueDisplayTitle, issueResponseValueLabel } from "@/lib/issues";
 
 export const dynamic = "force-dynamic";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim().replace(/\/$/, "") || "";
+
+function uploadSrc(publicPath: string) {
+  if (publicPath.startsWith("http://") || publicPath.startsWith("https://")) return publicPath;
+  if (basePath && publicPath.startsWith(`${basePath}/`)) return publicPath;
+  return publicPath.startsWith("/") ? `${basePath}${publicPath}` : `${basePath}/${publicPath}`;
+}
+
 export default async function SupervisorIssuesPage() {
   const [supervisors, issues, unreadNotifications] = await Promise.all([
-    prisma.user.findMany({ where: { role: "SUPERVISOR", isActive: true }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({ where: { roles: { has: "FOLLOWUP" }, isActive: true }, orderBy: { name: "asc" } }),
     prisma.issue.findMany({
       where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       include: {
         room: true,
         createdBy: true,
-        session: { include: { inspector: true } },
-        response: { include: { item: true } },
+        attachments: { orderBy: { createdAt: "desc" } },
+        session: { include: { inspector: true, attachments: { orderBy: { createdAt: "desc" } } } },
+        response: { include: { item: true, attachments: { orderBy: { createdAt: "desc" } } } },
         logs: { orderBy: { createdAt: "desc" }, include: { actor: true } },
         notifications: { where: { isRead: false } },
       },
     }),
-    prisma.notification.count({ where: { isRead: false, recipient: { role: "SUPERVISOR", isActive: true } } }),
+    prisma.notification.count({ where: { isRead: false, recipient: { roles: { has: "FOLLOWUP" }, isActive: true } } }),
   ]);
 
   return (
@@ -34,11 +47,12 @@ export default async function SupervisorIssuesPage() {
           <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2 hover:border-accent/50">
             <LayoutDashboard size={16} /> Admin
           </Link>
+          <LogoutButton className="rounded-2xl border border-border bg-card px-3 py-2 hover:border-accent/50" />
         </div>
       </nav>
 
       <header className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Supervisor</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Tindak Lanjut</p>
         <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Issue Terbuka</h1>
         <p className="mt-2 max-w-2xl text-muted">Tindak lanjuti issue dari pemeriksaan petugas, tandai diproses, lalu close setelah perbaikan terverifikasi.</p>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -59,7 +73,7 @@ export default async function SupervisorIssuesPage() {
 
       {supervisors.length === 0 ? (
         <section className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">
-          Belum ada user supervisor aktif. Tambahkan minimal satu user role SUPERVISOR agar issue bisa diproses.
+          Belum ada petugas tindak lanjut aktif. Tambahkan minimal satu petugas dengan peran Tindak Lanjut agar issue bisa diproses.
         </section>
       ) : null}
 
@@ -72,7 +86,15 @@ export default async function SupervisorIssuesPage() {
           </div>
         ) : null}
 
-        {issues.map((issue) => (
+        {issues.map((issue) => {
+          const attachmentMap = new Map(
+            [...issue.attachments, ...(issue.response?.attachments || []), ...(issue.session?.attachments || [])]
+              .filter((attachment) => attachment.mimeType.startsWith("image/"))
+              .map((attachment) => [attachment.id, attachment]),
+          );
+          const attachments = [...attachmentMap.values()];
+
+          return (
           <article key={issue.id} className="rounded-3xl border border-border bg-card p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
@@ -82,10 +104,39 @@ export default async function SupervisorIssuesPage() {
                   <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-bold">{categoryLabel(issue.category)}</span>
                   {issue.notifications.length > 0 ? <span className="rounded-full bg-accent px-3 py-1 text-xs font-black text-accent-foreground">Notif baru</span> : null}
                 </div>
-                <h2 className="mt-3 text-2xl font-black tracking-[-0.04em]">{issue.title}</h2>
+                <h2 className="mt-3 text-2xl font-black tracking-[-0.04em]">{issueDisplayTitle(issue)}</h2>
                 <p className="mt-1 text-sm text-muted">{issue.room.code} — {issue.room.name} • {formatDateTime(issue.createdAt)} • Petugas: {issue.session?.inspector?.name || issue.createdBy?.name || "-"}</p>
                 {issue.description ? <p className="mt-3 rounded-2xl bg-background p-3 text-sm text-muted">Catatan temuan: {issue.description}</p> : null}
-                {issue.response?.item ? <p className="mt-2 text-sm text-muted">Item checklist: {issue.response.item.prompt}</p> : null}
+                {issue.response?.item ? <p className="mt-2 text-sm text-muted">Status item: {issueResponseValueLabel(issue.response.value)} • Checklist: {issue.response.item.prompt}</p> : null}
+                {attachments.length > 0 ? (
+                  <div className="mt-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">Foto pendukung</p>
+                    <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                      {attachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={uploadSrc(attachment.publicPath)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group overflow-hidden rounded-2xl border border-border bg-background"
+                        >
+                          <Image
+                            src={uploadSrc(attachment.publicPath)}
+                            alt={attachment.caption || `Foto temuan ${issue.room.code}`}
+                            width={420}
+                            height={280}
+                            className="h-44 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                            unoptimized
+                          />
+                          <div className="p-3 text-xs text-muted">
+                            <p className="font-bold text-foreground">{attachment.caption || "Foto pendukung temuan"}</p>
+                            <p className="mt-1">{attachment.originalName}</p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <form className="grid gap-3 rounded-2xl border border-border bg-background p-3 lg:w-[360px]">
@@ -95,19 +146,21 @@ export default async function SupervisorIssuesPage() {
                   {supervisors.map((supervisor) => <option key={supervisor.id} value={supervisor.id}>{supervisor.name}</option>)}
                 </select>
                 <input name="note" className="rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-accent" placeholder="Catatan proses (opsional)" />
-                <button
+                <SubmitButton
                   formAction={markIssueInProgress}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-black hover:border-accent/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  formNoValidate
                   disabled={issue.status === "IN_PROGRESS"}
+                  pendingLabel="Memproses…"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-black hover:border-accent/50"
                 >
                   <Clock3 size={16} /> Tandai Diproses
-                </button>
+                </SubmitButton>
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
                   <div className="grid gap-2">
-                    <textarea name="resolutionNote" rows={3} className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Catatan penyelesaian wajib diisi" />
-                    <button formAction={resolveIssue} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white">
+                    <textarea name="resolutionNote" rows={3} required className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500" placeholder="Catatan penyelesaian wajib diisi" />
+                    <SubmitButton formAction={resolveIssue} pendingLabel="Menutup…" className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white">
                       <CheckCircle2 size={16} /> Close Issue
-                    </button>
+                    </SubmitButton>
                   </div>
                 </div>
               </form>
@@ -128,7 +181,8 @@ export default async function SupervisorIssuesPage() {
               </div>
             ) : null}
           </article>
-        ))}
+          );
+        })}
       </section>
     </main>
   );

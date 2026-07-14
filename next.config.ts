@@ -8,9 +8,9 @@ const nextConfig: NextConfig = {
   basePath,
   experimental: {
     serverActions: {
-      bodySizeLimit: "3mb",
+      bodySizeLimit: "12mb",
     },
-    proxyClientMaxBodySize: "3mb",
+    proxyClientMaxBodySize: "12mb",
   },
   turbopack: {
     root: path.resolve("."),

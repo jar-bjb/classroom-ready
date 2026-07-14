@@ -2,35 +2,20 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ClipboardList, FileSpreadsheet, LayoutDashboard } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ClipboardList, FileSpreadsheet, LayoutDashboard, UserCog } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LogoutButton } from "@/components/logout-button";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/rooms", label: "Kelola Kelas", icon: ClipboardList },
+  { href: "/admin/users", label: "Kelola Akun", icon: UserCog },
   { href: "/admin/logs", label: "Log & Export", icon: FileSpreadsheet },
 ];
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
 
-type ThemeMode = "light" | "dark";
-
 export function AdminNav() {
-  const [theme, setTheme] = useState<ThemeMode>("dark");
-
-  useEffect(() => {
-    const saved = (window.localStorage.getItem("classroom-ready-theme") as ThemeMode | null) ||
-      (document.documentElement.dataset.theme as ThemeMode | undefined) ||
-      "dark";
-    applyTheme(saved);
-  }, []);
-
-  function applyTheme(nextTheme: ThemeMode) {
-    document.documentElement.dataset.theme = nextTheme;
-    window.localStorage.setItem("classroom-ready-theme", nextTheme);
-    setTheme(nextTheme);
-  }
-
   return (
     <aside className="jar-sidebar border-r border-border bg-[color-mix(in_srgb,var(--sidebar)_97%,transparent)]">
       <div className="flex h-full flex-col p-[22px_18px]">
@@ -67,22 +52,10 @@ export function AdminNav() {
 
         <div className="mt-auto border-t border-border pt-3">
           <div className="text-[10px] font-semibold text-[var(--soft)]">Mode Tampilan</div>
-          <div className="mt-2 grid grid-cols-2 gap-1 rounded-[8px] border border-border bg-[var(--surface2)] p-1">
-            <button
-              type="button"
-              onClick={() => applyTheme("light")}
-              className={`rounded-[6px] px-2 py-[7px] text-[11px] font-semibold ${theme === "light" ? "bg-card text-[var(--heading)] shadow-sm" : "text-muted"}`}
-            >
-              ☼ Light
-            </button>
-            <button
-              type="button"
-              onClick={() => applyTheme("dark")}
-              className={`rounded-[6px] px-2 py-[7px] text-[11px] font-semibold ${theme === "dark" ? "bg-card text-[var(--heading)] shadow-sm" : "text-muted"}`}
-            >
-              ☾ Dark
-            </button>
+          <div className="mt-2">
+            <ThemeToggle />
           </div>
+          <LogoutButton className="mt-3 w-full justify-center rounded-[7px] border border-border px-[10px] py-[9px] text-sm font-medium text-muted hover:bg-[var(--surface3)] hover:text-[var(--heading)]" />
         </div>
       </div>
     </aside>

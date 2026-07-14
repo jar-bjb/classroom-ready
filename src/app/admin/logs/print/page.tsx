@@ -37,7 +37,7 @@ export default async function AdminLogsPrintPage({
           <tr className="bg-zinc-100">
             <th className="border border-zinc-300 p-2">Tanggal</th>
             <th className="border border-zinc-300 p-2">Kelas</th>
-            <th className="border border-zinc-300 p-2">Issue</th>
+            <th className="border border-zinc-300 p-2">Temuan</th>
             <th className="border border-zinc-300 p-2">Kategori</th>
             <th className="border border-zinc-300 p-2">Status</th>
             <th className="border border-zinc-300 p-2">Petugas</th>
@@ -53,7 +53,7 @@ export default async function AdminLogsPrintPage({
             <tr key={`${row["Kelas"]}-${row["Tanggal Issue"]}-${index}`}>
               <td className="border border-zinc-300 p-2 align-top">{row["Tanggal Issue"]}</td>
               <td className="border border-zinc-300 p-2 align-top font-bold">{row["Kelas"]}<br />{row["Nama Kelas"]}</td>
-              <td className="border border-zinc-300 p-2 align-top">{row["Judul Issue"]}<br /><span className="text-zinc-500">{row["Item Checklist"]}</span></td>
+              <td className="border border-zinc-300 p-2 align-top">{row["Temuan"]}<br /><span className="text-zinc-500">{row["Status Item"]} • {row["Item Checklist"]}</span></td>
               <td className="border border-zinc-300 p-2 align-top">{row["Kategori"]}<br />{row["Prioritas"]}</td>
               <td className="border border-zinc-300 p-2 align-top">{row["Status"]}</td>
               <td className="border border-zinc-300 p-2 align-top">{row["Petugas Pemeriksa"]}</td>

@@ -8,10 +8,15 @@ import { prisma } from "@/lib/prisma";
 import { addDays } from "@/lib/dates";
 import { assignedRoleForCategory, priorityForItem } from "@/lib/status";
 import { getEffectiveChecklistItems } from "@/lib/checklist";
-import { getSafeUploadExtension, validateUploadFile } from "@/lib/upload-policy";
+import { buildIssueTitle } from "@/lib/issues";
+import { assertImageBytes, getSafeUploadExtension, validateUploadFile } from "@/lib/upload-policy";
 import type { ChecklistItem, InspectionResult, ItemCategory, ResponseValue, RoomCertificationStatus } from "@/generated/prisma/client";
 
 const validResponseValues = new Set<ResponseValue>(["OK", "NOT_OK", "NA"]);
+
+function appPath(pathname: string) {
+  return pathname.startsWith("/") ? pathname : `/${pathname}`;
+}
 
 function safeFileName(name: string, mimeType: string) {
   const extension = getSafeUploadExtension(mimeType);
@@ -20,13 +25,36 @@ function safeFileName(name: string, mimeType: string) {
   return `${base || "photo"}-${crypto.randomUUID()}${extension}`;
 }
 
-function redirectWithFormError(roomId: string, message: string): never {
-  redirect(`/mobile/rooms/${roomId}/inspect?error=${encodeURIComponent(message)}`);
+// User-fixable validation error. Caught by submitWeeklyInspection and returned
+// as form state (via useActionState) so the filled inspection form stays mounted
+// and the petugas never loses their answers on a server-side reject.
+class InspectionValidationError extends Error {}
+
+function fail(message: string): never {
+  throw new InspectionValidationError(message);
 }
 
-function parseResponseValue(value: FormDataEntryValue | null, item: Pick<ChecklistItem, "prompt">, roomId: string) {
+type InspectionFormState = { error: string | null };
+
+function redirectWithAdminRoomsMessage(kind: "error" | "success", message: string): never {
+  redirect(appPath(`/admin/rooms?${kind}=${encodeURIComponent(message)}`));
+}
+
+function redirectWithEditRoomMessage(roomId: string, kind: "error" | "success", message: string): never {
+  redirect(appPath(`/admin/rooms/${roomId}/edit?${kind}=${encodeURIComponent(message)}`));
+}
+
+function redirectInspectionSuccess(hasPhoto: boolean): never {
+  redirect(appPath(`/mobile?submitted=1${hasPhoto ? "&photo=1" : ""}`));
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
+}
+
+function parseResponseValue(value: FormDataEntryValue | null, item: Pick<ChecklistItem, "prompt">) {
   if (typeof value !== "string" || !validResponseValues.has(value as ResponseValue)) {
-    redirectWithFormError(roomId, `Jawaban checklist tidak valid untuk item: ${item.prompt}`);
+    fail(`Pilih OK, Tidak OK, atau N/A untuk item: ${item.prompt}`);
   }
 
   return value as ResponseValue;
@@ -37,8 +65,38 @@ function getUploadFile(value: FormDataEntryValue | null) {
   return null;
 }
 
-async function persistFile(file: File, sessionId: string, responseId?: string | null, caption?: string | null) {
-  validateUploadFile(file);
+function getCompressedUploadFile(formData: FormData) {
+  const dataUrl = String(formData.get("inspectionPhotoCompressedData") || "");
+  if (!dataUrl) return null;
+
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) {
+    fail("Data foto hasil kompres tidak valid. Pilih ulang foto lalu submit lagi.");
+  }
+
+  try {
+    const [, mimeType, base64Data] = match;
+    const originalName = String(formData.get("inspectionPhotoCompressedName") || "foto-pemeriksaan-compressed.jpg");
+    const fileName = path.basename(originalName) || "foto-pemeriksaan-compressed.jpg";
+    const buffer = Buffer.from(base64Data, "base64");
+    if (buffer.length === 0) {
+      fail("Foto hasil kompres kosong. Pilih ulang foto lalu submit lagi.");
+    }
+
+    return new File([buffer], fileName, { type: mimeType });
+  } catch (error) {
+    // Keep the specific validation message; only genuine decode failures fall through.
+    if (error instanceof InspectionValidationError) throw error;
+    fail("Foto hasil kompres tidak bisa dibaca. Pilih ulang foto lalu submit lagi.");
+  }
+}
+
+// Write the upload to disk (a side effect a DB transaction cannot roll back) and
+// return the metadata; the Attachment row itself is created inside the caller's
+// transaction so the write stays atomic with the rest of the submission.
+async function storeUploadToDisk(file: File) {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = validatedImageMime(file, buffer);
 
   const uploadRoot = process.env.UPLOAD_DIR || "/tmp/classroom-ready-uploads";
   const today = new Date();
@@ -50,197 +108,247 @@ async function persistFile(file: File, sessionId: string, responseId?: string | 
   const absoluteDir = path.join(uploadRoot, relativeDir);
   await mkdir(absoluteDir, { recursive: true });
 
-  const fileName = safeFileName(file.name, file.type);
+  // Extension and stored MIME come from the detected type, not the client claim.
+  const fileName = safeFileName(file.name, mimeType);
   const storagePath = path.join(absoluteDir, fileName);
-  const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(storagePath, buffer);
 
-  return prisma.attachment.create({
-    data: {
-      sessionId,
-      responseId: responseId || null,
-      fileName,
-      originalName: file.name || fileName,
-      mimeType: file.type,
-      sizeBytes: file.size,
-      storagePath,
-      publicPath: `/api/uploads/${relativeDir.split(path.sep).join("/")}/${fileName}`,
-      caption: caption || null,
-    },
-  });
+  return {
+    fileName,
+    originalName: file.name || fileName,
+    mimeType,
+    sizeBytes: file.size,
+    storagePath,
+    publicPath: `/api/uploads/${relativeDir.split(path.sep).join("/")}/${fileName}`,
+  };
 }
 
-async function notifySupervisors(issueId: string, roomCode: string, title: string) {
-  const supervisors = await prisma.user.findMany({ where: { role: "SUPERVISOR", isActive: true }, select: { id: true } });
-  if (supervisors.length === 0) return;
-
-  await prisma.notification.createMany({
-    data: supervisors.map((supervisor) => ({
-      recipientId: supervisor.id,
-      issueId,
-      title: `Issue baru ${roomCode}`,
-      message: title,
-    })),
-  });
+// Validate size + client MIME + actual magic bytes; returns the detected image
+// MIME, or fails with a user-facing message when the content isn't a real image.
+function validatedImageMime(file: File, buffer: Buffer): string {
+  try {
+    validateUploadFile(file);
+    return assertImageBytes(buffer);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "File foto tidak valid.");
+  }
 }
 
-export async function submitWeeklyInspection(formData: FormData) {
+export async function submitWeeklyInspection(
+  _prevState: InspectionFormState,
+  formData: FormData,
+): Promise<InspectionFormState> {
   const roomId = String(formData.get("roomId") || "");
   const templateVersionId = String(formData.get("templateVersionId") || "");
+  const submissionToken = String(formData.get("submissionToken") || "").trim();
   const inspectorId = String(formData.get("inspectorId") || "").trim();
-  const summaryNote = String(formData.get("summaryNote") || "").trim();
+  const summaryNote = String(formData.get("summaryNote") || "").trim().slice(0, 5000);
 
-  if (!roomId || !templateVersionId) {
-    throw new Error("Ruang dan template checklist wajib tersedia");
-  }
-
-  if (!inspectorId) {
-    redirectWithFormError(roomId, "Nama petugas wajib dipilih dari daftar.");
-  }
-
-  const [room, templateVersion] = await Promise.all([
-    prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
-    prisma.checklistTemplateVersion.findUnique({
-      where: { id: templateVersionId },
-      include: {
-        sections: {
-          orderBy: { sortOrder: "asc" },
-          include: {
-            items: {
-              where: { isActive: true },
-              orderBy: { sortOrder: "asc" },
-              include: { roomOverrides: { where: { roomId } } },
-            },
-          }
-        },
-      },
-    }),
-  ]);
-
-  if (!room || !templateVersion) {
-    throw new Error("Data ruang/template tidak ditemukan");
-  }
-
-  const items = templateVersion.sections.flatMap((section) => getEffectiveChecklistItems(section.items, room.id, room.type.slug));
-  const inspectionPhoto = getUploadFile(formData.get("inspectionPhoto"));
-  const inspectionPhotoNote = String(formData.get("inspectionPhotoNote") || "").trim();
-
-  if (inspectionPhoto) {
-    try {
-      validateUploadFile(inspectionPhoto);
-    } catch (error) {
-      redirectWithFormError(roomId, error instanceof Error ? error.message : "File foto tidak valid.");
+  try {
+    if (!roomId || !templateVersionId) {
+      fail("Ruang dan template checklist tidak tersedia. Buka ulang tugas dari daftar.");
     }
-  }
 
-  const responseInputs = items.map((item) => {
-    const value = parseResponseValue(formData.get(`value_${item.id}`), item, roomId);
-    const note = String(formData.get(`note_${item.id}`) || "").trim();
+    if (submissionToken) {
+      const existingSubmission = await prisma.inspectionSession.findUnique({
+        where: { submissionToken },
+        select: { attachments: { select: { id: true }, take: 1 } },
+      });
 
-    return { item, value, note };
-  });
+      if (existingSubmission) {
+        redirectInspectionSuccess(existingSubmission.attachments.length > 0);
+      }
+    }
 
-  const failedResponses = responseInputs.filter(({ item, value }) => value === "NOT_OK" || (item.isCritical && value === "NA"));
-  const hasCriticalFailure = failedResponses.some(({ item }) => item.isCritical);
-  const result: InspectionResult = hasCriticalFailure
-    ? "NOT_CERTIFIED"
-    : failedResponses.length > 0
-      ? "CERTIFIED_WITH_NOTES"
-      : "CERTIFIED";
-  const roomStatus: RoomCertificationStatus = result;
-  const expiresAt = addDays(new Date(), 7);
+    if (!inspectorId) {
+      fail("Nama petugas wajib dipilih dari daftar.");
+    }
 
-  const inspector = await prisma.user.findFirst({
-    where: { id: inspectorId, role: "INSPECTOR", isActive: true },
-  });
+    const [room, templateVersion] = await Promise.all([
+      prisma.room.findUnique({ where: { id: roomId }, include: { type: true } }),
+      prisma.checklistTemplateVersion.findUnique({
+        where: { id: templateVersionId },
+        include: {
+          sections: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              items: {
+                where: { isActive: true },
+                orderBy: { sortOrder: "asc" },
+                include: { roomOverrides: { where: { roomId } } },
+              },
+            }
+          },
+        },
+      }),
+    ]);
 
-  if (!inspector) {
-    redirectWithFormError(roomId, "Petugas tidak ditemukan atau sudah tidak aktif.");
-  }
+    if (!room || !templateVersion) {
+      fail("Data ruang/template tidak ditemukan. Buka ulang tugas dari daftar.");
+    }
 
-  const session = await prisma.inspectionSession.create({
-    data: {
-      roomId,
-      templateVersionId,
-      inspectorId: inspector.id,
-      type: "WEEKLY_CERTIFICATION",
-      status: "SUBMITTED",
-      result,
-      submittedAt: new Date(),
-      expiresAt,
-      summaryNote: summaryNote || null,
-    },
-  });
+    const items = templateVersion.sections.flatMap((section) => getEffectiveChecklistItems(section.items, room.id, room.type.slug));
+    const inspectionPhoto = getUploadFile(formData.get("inspectionPhoto")) || getCompressedUploadFile(formData);
+    const inspectionPhotoNote = String(formData.get("inspectionPhotoNote") || "").trim().slice(0, 5000);
 
-  if (inspectionPhoto) {
-    await persistFile(inspectionPhoto, session.id, null, inspectionPhotoNote);
-  }
+    const responseInputs = items.map((item) => {
+      const value = parseResponseValue(formData.get(`value_${item.id}`), item);
+      const note = String(formData.get(`note_${item.id}`) || "").trim().slice(0, 5000);
 
-  for (const { item, value, note } of responseInputs) {
-    const response = await prisma.inspectionResponse.create({
-      data: {
-        sessionId: session.id,
-        itemId: item.id,
-        value,
-        note: note || null,
-      },
+      return { item, value, note };
     });
 
-    if (value === "NOT_OK" || (item.isCritical && value === "NA")) {
-      const issueTitle = `${room.code} - ${item.prompt}`;
-      const issue = await prisma.issue.create({
-        data: {
-          roomId,
-          sessionId: session.id,
-          responseId: response.id,
-          category: item.category,
-          title: issueTitle,
-          description: note || (value === "NA" ? "Item kritikal tidak dapat diverifikasi." : null),
-          priority: priorityForItem(item.isCritical),
-          status: "OPEN",
-          assignedRole: assignedRoleForCategory(item.category),
-          createdById: inspector.id,
-        },
-      });
+    const failedResponses = responseInputs.filter(({ item, value }) => value === "NOT_OK" || (item.isCritical && value === "NA"));
+    const hasCriticalFailure = failedResponses.some(({ item }) => item.isCritical);
+    const result: InspectionResult = hasCriticalFailure
+      ? "NOT_CERTIFIED"
+      : failedResponses.length > 0
+        ? "CERTIFIED_WITH_NOTES"
+        : "CERTIFIED";
+    const roomStatus: RoomCertificationStatus = result;
+    const expiresAt = addDays(new Date(), 7);
 
-      await prisma.issueLog.create({
-        data: {
-          issueId: issue.id,
-          actorId: inspector.id,
-          action: "ISSUE_CREATED",
-          newStatus: "OPEN",
-          note: note || "Issue dibuat otomatis dari hasil pemeriksaan petugas.",
-        },
-      });
+    const inspector = await prisma.user.findFirst({
+      where: { id: inspectorId, roles: { has: "INSPECTOR" }, isActive: true },
+    });
 
-      await notifySupervisors(issue.id, room.code, issueTitle);
+    if (!inspector) {
+      fail("Petugas tidak ditemukan atau sudah tidak aktif.");
     }
+
+    const inspectorUserId = inspector.id;
+
+    // Filesystem I/O BEFORE the transaction — it cannot be rolled back by the DB
+    // transaction, so the Attachment row (created inside the tx) references a
+    // file that already exists on disk.
+    const photoMeta = inspectionPhoto ? await storeUploadToDisk(inspectionPhoto) : null;
+
+    // Atomic write: session + attachment + all responses + issues + logs +
+    // notifications + room status commit together, or none do. Prevents the
+    // partial-write and false-success-on-retry problem where a session row
+    // exists but its responses/issues were never written.
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          const session = await tx.inspectionSession.create({
+            data: {
+              roomId,
+              templateVersionId,
+              inspectorId: inspectorUserId,
+              type: "WEEKLY_CERTIFICATION",
+              status: "SUBMITTED",
+              result,
+              submittedAt: new Date(),
+              expiresAt,
+              summaryNote: summaryNote || null,
+              submissionToken: submissionToken || null,
+            },
+          });
+
+          if (photoMeta) {
+            await tx.attachment.create({
+              data: { sessionId: session.id, responseId: null, caption: inspectionPhotoNote || null, ...photoMeta },
+            });
+          }
+
+          const supervisors = await tx.user.findMany({ where: { roles: { has: "SUPERVISOR" }, isActive: true }, select: { id: true } });
+          const notifications: { recipientId: string; issueId: string; title: string; message: string }[] = [];
+
+          for (const { item, value, note } of responseInputs) {
+            const response = await tx.inspectionResponse.create({
+              data: { sessionId: session.id, itemId: item.id, value, note: note || null },
+            });
+
+            if (value === "NOT_OK" || (item.isCritical && value === "NA")) {
+              const issueTitle = buildIssueTitle(room.code, item.prompt, value);
+              const issue = await tx.issue.create({
+                data: {
+                  roomId,
+                  sessionId: session.id,
+                  responseId: response.id,
+                  category: item.category,
+                  title: issueTitle,
+                  description: note || (value === "NA" ? "Item kritikal tidak dapat diverifikasi." : null),
+                  priority: priorityForItem(item.isCritical),
+                  status: "OPEN",
+                  assignedRole: assignedRoleForCategory(item.category),
+                  createdById: inspectorUserId,
+                },
+              });
+
+              await tx.issueLog.create({
+                data: {
+                  issueId: issue.id,
+                  actorId: inspectorUserId,
+                  action: "ISSUE_CREATED",
+                  newStatus: "OPEN",
+                  note: note || "Issue dibuat otomatis dari hasil pemeriksaan petugas.",
+                },
+              });
+
+              for (const supervisor of supervisors) {
+                notifications.push({ recipientId: supervisor.id, issueId: issue.id, title: `Issue baru ${room.code}`, message: issueTitle });
+              }
+            }
+          }
+
+          if (notifications.length > 0) {
+            await tx.notification.createMany({ data: notifications });
+          }
+
+          await tx.room.update({
+            where: { id: roomId },
+            data: { status: roomStatus, certificationExpiresAt: expiresAt, lastInspectionId: session.id },
+          });
+        },
+        { timeout: 20000 },
+      );
+    } catch (error) {
+      // Idempotent replay: a concurrent/retried submit with the same token hit the
+      // unique constraint — the first one already committed the whole submission.
+      if (submissionToken && isUniqueConstraintError(error)) {
+        const existingSubmission = await prisma.inspectionSession.findUnique({
+          where: { submissionToken },
+          select: { attachments: { select: { id: true }, take: 1 } },
+        });
+
+        if (existingSubmission) {
+          redirectInspectionSuccess(existingSubmission.attachments.length > 0);
+        }
+      }
+
+      throw error;
+    }
+
+    revalidatePath("/mobile");
+    revalidatePath(`/mobile/rooms/${roomId}/inspect`);
+    revalidatePath(`/admin/rooms/${roomId}`);
+    revalidatePath("/dashboard");
+    revalidatePath("/supervisor/issues");
+    redirectInspectionSuccess(Boolean(inspectionPhoto));
+  } catch (error) {
+    if (error instanceof InspectionValidationError) {
+      return { error: error.message };
+    }
+
+    throw error;
   }
-
-  await prisma.room.update({
-    where: { id: roomId },
-    data: {
-      status: roomStatus,
-      certificationExpiresAt: expiresAt,
-      lastInspectionId: session.id,
-    },
-  });
-
-  revalidatePath("/mobile");
-  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
-  revalidatePath(`/admin/rooms/${roomId}`);
-  revalidatePath("/dashboard");
-  revalidatePath("/supervisor/issues");
-  redirect(`/mobile?submitted=1`);
 }
 
-function formString(formData: FormData, key: string) {
-  return String(formData.get(key) || "").trim();
+// Cap free-text length to bound pathological input; legitimate values are far shorter.
+function formString(formData: FormData, key: string, maxLength = 5000) {
+  return String(formData.get(key) || "").trim().slice(0, maxLength);
 }
 
 function formOptionalInt(formData: FormData, key: string) {
   const value = formString(formData, key);
-  return value ? Number(value) : null;
+  if (!value) return null;
+
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return null;
+  // Clamp to a sane, non-negative integer range (capacity, sort order) so
+  // negatives / huge / fractional values can't be persisted.
+  return Math.min(1_000_000, Math.max(0, Math.trunc(numberValue)));
 }
 
 function inspectorEmailFromName(name: string) {
@@ -268,8 +376,8 @@ async function uniqueInspectorEmail(name: string) {
   return candidate;
 }
 
-function formCategory(formData: FormData): ItemCategory {
-  const value = formString(formData, "category") as ItemCategory;
+function formCategory(formData: FormData, key = "category"): ItemCategory {
+  const value = formString(formData, key) as ItemCategory;
   const valid: ItemCategory[] = ["FACILITY", "HVAC", "LIGHTING", "ELECTRICAL", "AV", "IT", "CONSUMABLE", "CLEANLINESS", "SAFETY"];
   return valid.includes(value) ? value : "FACILITY";
 }
@@ -277,7 +385,7 @@ function formCategory(formData: FormData): ItemCategory {
 export async function createRoom(formData: FormData) {
   const code = formString(formData, "code").toUpperCase();
   const name = formString(formData, "name");
-  if (!code || !name) throw new Error("Kode dan nama ruang wajib diisi");
+  if (!code || !name) redirectWithAdminRoomsMessage("error", "Kode dan nama kelas wajib diisi.");
 
   const roomType = await prisma.roomType.upsert({
     where: { slug: "kelas" },
@@ -285,18 +393,156 @@ export async function createRoom(formData: FormData) {
     create: { slug: "kelas", name: "Kelas" },
   });
 
-  await prisma.room.create({
+  const roomData = {
+    name,
+    typeId: roomType.id,
+    floor: formString(formData, "floor") || null,
+    location: formString(formData, "location") || null,
+    capacity: formOptionalInt(formData, "capacity"),
+  };
+  const existingRoom = await prisma.room.findUnique({ where: { code } });
+
+  if (existingRoom?.isActive) {
+    redirectWithAdminRoomsMessage("error", `Kode kelas ${code} sudah ada. Pakai kode lain atau edit kelas yang sudah terdaftar.`);
+  }
+
+  if (existingRoom) {
+    await prisma.room.update({
+      where: { id: existingRoom.id },
+      data: {
+        ...roomData,
+        isActive: true,
+      },
+    });
+  } else {
+    await prisma.room.create({
+      data: {
+        code,
+        ...roomData,
+      },
+    });
+  }
+  revalidatePath("/admin/rooms");
+  revalidatePath("/mobile");
+  redirectWithAdminRoomsMessage(
+    "success",
+    existingRoom ? `Kelas ${code} sudah diaktifkan kembali.` : `Kelas ${code} berhasil ditambahkan.`,
+  );
+}
+
+export async function updateRoom(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  const code = formString(formData, "code").toUpperCase();
+  const name = formString(formData, "name");
+
+  if (!roomId) throw new Error("Room ID wajib ada");
+  if (!code || !name) redirectWithEditRoomMessage(roomId, "error", "Kode dan nama kelas wajib diisi.");
+
+  const room = await prisma.room.findUnique({ where: { id: roomId } });
+  if (!room) throw new Error("Data kelas tidak ditemukan");
+
+  const roomWithSameCode = await prisma.room.findUnique({ where: { code } });
+  if (roomWithSameCode && roomWithSameCode.id !== roomId) {
+    redirectWithEditRoomMessage(roomId, "error", `Kode kelas ${code} sudah dipakai kelas lain.`);
+  }
+
+  await prisma.room.update({
+    where: { id: roomId },
     data: {
       code,
       name,
-      typeId: roomType.id,
       floor: formString(formData, "floor") || null,
       location: formString(formData, "location") || null,
       capacity: formOptionalInt(formData, "capacity"),
     },
   });
+
   revalidatePath("/admin/rooms");
+  revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/admin/rooms/${roomId}/edit`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
   revalidatePath("/mobile");
+  revalidatePath("/dashboard");
+  redirectWithEditRoomMessage(roomId, "success", `Data kelas ${code} berhasil diperbarui.`);
+}
+
+export async function updateRoomWithComponents(formData: FormData) {
+  const roomId = formString(formData, "roomId");
+  const code = formString(formData, "code").toUpperCase();
+  const name = formString(formData, "name");
+
+  if (!roomId) throw new Error("Room ID wajib ada");
+  if (!code || !name) redirectWithEditRoomMessage(roomId, "error", "Kode dan nama kelas wajib diisi.");
+
+  const room = await prisma.room.findUnique({ where: { id: roomId } });
+  if (!room) throw new Error("Data kelas tidak ditemukan");
+
+  const roomWithSameCode = await prisma.room.findUnique({ where: { code } });
+  if (roomWithSameCode && roomWithSameCode.id !== roomId) {
+    redirectWithEditRoomMessage(roomId, "error", `Kode kelas ${code} sudah dipakai kelas lain.`);
+  }
+
+  const itemIds = Array.from(new Set(formData.getAll("componentItemId").map((value) => String(value)).filter(Boolean)));
+  const updates = itemIds.map((itemId) => {
+    const prompt = formString(formData, `prompt_${itemId}`);
+
+    if (!prompt) {
+      redirectWithEditRoomMessage(roomId, "error", "Nama fasilitas/komponen tidak boleh kosong.");
+    }
+
+    return {
+      itemId,
+      prompt,
+      helpText: formString(formData, `helpText_${itemId}`) || null,
+      category: formCategory(formData, `category_${itemId}`),
+      isCritical: formData.get(`isCritical_${itemId}`) === "on",
+      sortOrder: formOptionalInt(formData, `sortOrder_${itemId}`),
+    };
+  });
+
+  await prisma.$transaction([
+    prisma.room.update({
+      where: { id: roomId },
+      data: {
+        code,
+        name,
+        floor: formString(formData, "floor") || null,
+        location: formString(formData, "location") || null,
+        capacity: formOptionalInt(formData, "capacity"),
+      },
+    }),
+    ...updates.map((update) =>
+      prisma.roomChecklistItemOverride.upsert({
+        where: { roomId_itemId: { roomId, itemId: update.itemId } },
+        update: {
+          prompt: update.prompt,
+          helpText: update.helpText,
+          category: update.category,
+          isCritical: update.isCritical,
+          sortOrder: update.sortOrder,
+          isActive: true,
+        },
+        create: {
+          roomId,
+          itemId: update.itemId,
+          prompt: update.prompt,
+          helpText: update.helpText,
+          category: update.category,
+          isCritical: update.isCritical,
+          sortOrder: update.sortOrder,
+          isActive: true,
+        },
+      }),
+    ),
+  ]);
+
+  revalidatePath("/admin/rooms");
+  revalidatePath(`/admin/rooms/${roomId}`);
+  revalidatePath(`/admin/rooms/${roomId}/edit`);
+  revalidatePath(`/mobile/rooms/${roomId}/inspect`);
+  revalidatePath("/mobile");
+  revalidatePath("/dashboard");
+  redirectWithEditRoomMessage(roomId, "success", `Kelas ${code} dan seluruh komponen berhasil diperbarui.`);
 }
 
 export async function deleteRoom(formData: FormData) {
@@ -305,14 +551,17 @@ export async function deleteRoom(formData: FormData) {
   await prisma.room.update({ where: { id: roomId }, data: { isActive: false } });
   revalidatePath("/admin/rooms");
   revalidatePath("/mobile");
+  revalidatePath("/dashboard");
+  redirectWithAdminRoomsMessage("success", "Kelas sudah dinonaktifkan dari daftar aktif.");
 }
 
-async function createUserWithRole(name: string, role: "INSPECTOR" | "SUPERVISOR") {
+async function createUserWithRole(name: string, role: "INSPECTOR" | "FOLLOWUP") {
   return prisma.user.create({
     data: {
       name,
       email: await uniqueInspectorEmail(name),
       role,
+      roles: [role],
       isActive: true,
     },
   });
@@ -345,7 +594,7 @@ export async function createSupervisor(formData: FormData) {
   const name = formString(formData, "name");
   if (!name) throw new Error("Nama petugas tindak lanjut wajib diisi");
 
-  await createUserWithRole(name, "SUPERVISOR");
+  await createUserWithRole(name, "FOLLOWUP");
 
   revalidatePath("/admin/rooms");
   revalidatePath("/supervisor/issues");
@@ -365,7 +614,7 @@ export async function deactivateSupervisor(formData: FormData) {
 }
 
 async function requireActiveSupervisor(supervisorId: string) {
-  const supervisor = await prisma.user.findFirst({ where: { id: supervisorId, role: "SUPERVISOR", isActive: true } });
+  const supervisor = await prisma.user.findFirst({ where: { id: supervisorId, roles: { has: "FOLLOWUP" }, isActive: true } });
   if (!supervisor) throw new Error("Petugas tindak lanjut tidak valid atau tidak aktif");
   return supervisor;
 }

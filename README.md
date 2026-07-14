@@ -23,8 +23,9 @@ Aplikasi web mobile-first untuk pemeriksaan kesiapan kelas, pembuatan issue tind
 - **ORM**: Prisma 7 dengan generated client di `src/generated/prisma`.
 - **Styling**: Tailwind CSS 4.
 - **Validation/utilities**: Zod, qrcode, native Server Actions.
-- **Container**: Dockerfile multi-stage Node 22 Alpine + Docker Compose.
-- **Upload storage**: filesystem lokal melalui `UPLOAD_DIR` atau Docker volume `classroom_ready_uploads`.
+- **Container runtime production admjar**: Podman rootless + `docker-compose.yml` yang kompatibel Compose.
+- **Image build**: Dockerfile multi-stage Node 22 Alpine.
+- **Upload storage**: filesystem lokal melalui `UPLOAD_DIR` atau Podman volume `classroom_ready_uploads`.
 
 ## Struktur folder penting
 
@@ -39,6 +40,7 @@ Aplikasi web mobile-first untuk pemeriksaan kesiapan kelas, pembuatan issue tind
 - `src/app/api/uploads/[...filePath]` — endpoint baca foto upload secara aman.
 - `src/app/api/admin/logs/export/excel` — export Excel-compatible HTML `.xls`.
 - `src/app/api/integration/dashboard-summary` — endpoint JSON ringkasan live untuk integrasi Dashboard JAR.
+- `src/app/api/health` — endpoint healthcheck container; cek database dan akses upload directory.
 - `src/app/actions.ts` — Server Actions utama: submit inspeksi, CRUD kelas/petugas, update issue, override checklist.
 - `src/lib/status.ts` — label status, prioritas, mapping kategori ke role tindak lanjut.
 - `src/lib/checklist.ts` — resolusi item checklist efektif per kelas.
@@ -49,6 +51,9 @@ Aplikasi web mobile-first untuk pemeriksaan kesiapan kelas, pembuatan issue tind
 - `prisma/seed.ts` — seed data demo: petugas, supervisor, kelas, dan template pemeriksaan.
 - `scripts/test-security.mjs` — smoke test security headers dan upload probes.
 - `scripts/test-reliability.mjs` — smoke/load sederhana untuk route utama.
+- `scripts/deploy.sh` — deploy production Podman rootless tanpa recreate database.
+- `scripts/healthcheck.sh` — cek service, container, dan endpoint health.
+- `scripts/backup-db.sh` — backup PostgreSQL dan volume upload.
 
 ## Environment variables
 
@@ -63,7 +68,7 @@ Variabel yang dipakai:
 - `DATABASE_URL`
   - Connection string PostgreSQL.
   - Local host default mengikuti port compose `55438`.
-  - Production container sebaiknya memakai hostname service Docker, contoh `db:5432`.
+  - Production container sebaiknya memakai hostname container DB, contoh `classroom-ready-db:5432`.
 - `NEXT_PUBLIC_APP_URL`
   - Base URL publik aplikasi.
   - Dipakai untuk generate QR agar scan mengarah ke domain production yang benar.
@@ -71,7 +76,7 @@ Variabel yang dipakai:
 - `UPLOAD_DIR`
   - Folder penyimpanan foto upload.
   - Local default: `./uploads`.
-  - Docker default: `/app/uploads`.
+  - Container default: `/app/uploads`.
 - `PORT`
   - Port app di container. Default compose: `3000`.
 - `HOSTNAME`
@@ -94,7 +99,7 @@ Contoh `.env` development:
 POSTGRES_USER=classroom_ready
 POSTGRES_PASSWORD=classroom_ready_dev_change_me
 POSTGRES_DB=classroom_ready
-DATABASE_URL="postgresql://classroom_ready:classroom_ready_dev_change_me@db:5432/classroom_ready?schema=public"
+DATABASE_URL="postgresql://classroom_ready:classroom_ready_dev_change_me@classroom-ready-db:5432/classroom_ready?schema=public"
 NEXT_PUBLIC_APP_URL="http://127.0.0.1:3020"
 UPLOAD_DIR="/app/uploads"
 CLASSROOM_APP_BIND=127.0.0.1:3020
@@ -105,7 +110,7 @@ Contoh nilai production harus dibuat langsung di VPS dan jangan disimpan di repo
 
 ```env
 POSTGRES_PASSWORD="[REDACTED]"
-DATABASE_URL="postgresql://classroom_ready:[REDACTED]@db:5432/classroom_ready?schema=public"
+DATABASE_URL="postgresql://classroom_ready:[REDACTED]@classroom-ready-db:5432/classroom_ready?schema=public"
 NEXT_PUBLIC_APP_URL="https://domain-production"
 UPLOAD_DIR="/app/uploads"
 BASIC_AUTH_USER="[REDACTED]"
@@ -117,7 +122,7 @@ BASIC_AUTH_PASSWORD="[REDACTED]"
 Prerequisite:
 
 - Node.js 22 atau versi kompatibel dengan Next.js 16.
-- Docker + Docker Compose.
+- Podman + provider Compose.
 - npm.
 
 Langkah awal:
@@ -126,7 +131,7 @@ Langkah awal:
 cd classroom-ready
 cp .env.example .env
 npm install
-docker compose up -d db
+podman compose up -d db
 npm run db:generate
 npm run db:push
 npm run db:seed
@@ -236,12 +241,12 @@ npm run db:reset
 - `Notification`
   - Notifikasi internal ke supervisor saat issue baru dibuat.
 
-## Docker local/preview
+## Podman local/preview
 
 Jalankan full stack app + database:
 
 ```bash
-docker compose up -d --build
+podman compose up -d --build
 ```
 
 Compose default:
@@ -250,8 +255,10 @@ Compose default:
 - DB container: `classroom-ready-db`.
 - PostgreSQL host port local-only: `127.0.0.1:55438`.
 - App host port local-only: `127.0.0.1:3020`.
+- Network: `classroom-ready-net`.
 - Upload volume: `classroom_ready_uploads`.
 - DB volume: `classroom_ready_pg`.
+- Healthcheck app: `GET /api/health` atau `<NEXT_PUBLIC_BASE_PATH>/api/health`, status `healthy` jika app, DB, dan upload directory siap.
 
 Buka:
 
@@ -262,56 +269,64 @@ http://127.0.0.1:3020
 Cek log:
 
 ```bash
-docker compose logs -f app
-docker compose logs -f db
+podman compose logs -f app
+podman compose logs -f db
+```
+
+Cek status healthcheck:
+
+```bash
+podman compose ps
+podman inspect --format='{{json .State.Health}}' classroom-ready-app | jq
+scripts/healthcheck.sh
 ```
 
 Stop stack:
 
 ```bash
-docker compose down
+podman compose down
 ```
 
 Stop dan hapus volume data lokal:
 
 ```bash
-docker compose down -v
+podman compose down -v
 ```
 
 ## Deployment VPS production
 
+Runtime resmi sistem admjar untuk aplikasi ini:
+
+- Podman rootless untuk app + PostgreSQL.
+- `docker-compose.yml` tetap dipakai sebagai format Compose yang dibaca Podman.
+- User service memakai `systemctl --user` untuk auto-start app container.
+
 Rekomendasi stack:
 
-- Docker Compose untuk app + PostgreSQL.
+- Podman rootless + Compose-compatible YAML.
 - Caddy reverse proxy di host atau container global.
-- Database tetap private di Docker network; jangan expose PostgreSQL publik.
+- Database tetap private di network `classroom-ready-net`; jangan expose PostgreSQL publik.
 - Port app sebaiknya hanya bind ke localhost, seperti compose saat ini `127.0.0.1:3020:3000`.
-- Upload foto disimpan di Docker volume atau bind mount host yang dibackup rutin.
+- Upload foto disimpan di Podman volume `classroom_ready_uploads` atau bind mount host yang dibackup rutin.
 - Untuk sistem admjar, jangan pakai port `3010` karena sudah dipakai aplikasi lain.
 - Jangan expose route UI/admin/supervisor/mobile tanpa `BASIC_AUTH_USER` dan `BASIC_AUTH_PASSWORD`, kecuali sudah diganti auth/RBAC proper.
 
 Langkah deployment dasar:
 
 ```bash
-# di VPS
-mkdir -p /opt/classroom-ready
-cd /opt/classroom-ready
-# upload/copy source project ke folder ini
-cp .env.example .env
-# edit .env: isi DATABASE_URL production dan NEXT_PUBLIC_APP_URL domain publik
-
-docker compose up -d --build
+cd /opt/apps/classroom-ready/source
+scripts/deploy.sh
 ```
 
 Jika memakai Caddy host/service, contoh reverse proxy:
 
 ```caddyfile
 pemeriksaankelas.example.id {
-  reverse_proxy 127.0.0.1:3010
+  reverse_proxy 127.0.0.1:3020
 }
 ```
 
-Jika memakai Caddy container global, pastikan container Caddy bisa reach app. Opsi termudah: tetap expose app ke `127.0.0.1:3010` dan reverse proxy dari host Caddy. Jika Caddy juga container-only, sambungkan network Compose sesuai arsitektur VPS.
+Jika memakai Caddy container global, pastikan container Caddy bisa reach app. Opsi termudah: tetap expose app ke `127.0.0.1:3020` dan reverse proxy dari host Caddy. Jika Caddy juga container-only, sambungkan network Compose sesuai arsitektur VPS.
 
 Set `NEXT_PUBLIC_APP_URL` ke domain HTTPS production sebelum generate QR:
 
@@ -322,9 +337,9 @@ NEXT_PUBLIC_APP_URL="https://pemeriksaankelas.example.id"
 Setelah deploy:
 
 ```bash
-docker compose ps
-docker compose logs --tail=100 app
-curl -I http://127.0.0.1:3020/mobile
+scripts/healthcheck.sh
+podman ps --format '{{.Names}}\t{{.Status}}' | rg 'classroom-ready'
+podman logs --tail=100 classroom-ready-app
 ```
 
 ## Database migration dan seed
@@ -332,13 +347,13 @@ curl -I http://127.0.0.1:3020/mobile
 Project saat ini memakai `prisma db push` di Dockerfile CMD agar schema tersinkron saat container start:
 
 ```dockerfile
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push && node server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push && exec node server.js"]
 ```
 
 Untuk production awal:
 
 ```bash
-docker compose exec app ./node_modules/.bin/prisma db push
+podman exec classroom-ready-app ./node_modules/.bin/prisma db push
 ```
 
 Seed demo hanya untuk development atau initial demo, jangan jalankan di production berisi data real karena seed menghapus data existing sebelum mengisi demo:
@@ -350,30 +365,29 @@ npm run db:seed
 atau di container bila memang sengaja reset demo:
 
 ```bash
-docker compose exec app npm run db:seed
+podman exec classroom-ready-app npm run db:seed
 ```
 
 Peringatan: `prisma/seed.ts` menjalankan banyak `deleteMany()`. Jangan dipakai di database production berisi data operasional.
 
 ## Backup dan restore
 
-Backup PostgreSQL dari Docker Compose:
+Backup PostgreSQL dan upload dari Podman:
 
 ```bash
-mkdir -p backups
-docker compose exec -T db pg_dump -U classroom_ready classroom_ready | gzip > backups/classroom_ready_$(date +%F_%H%M%S).sql.gz
+scripts/backup-db.sh
 ```
 
 Restore ke database kosong:
 
 ```bash
-gunzip -c backups/classroom_ready_YYYY-MM-DD_HHMMSS.sql.gz | docker compose exec -T db psql -U classroom_ready classroom_ready
+gunzip -c backups/classroom_ready_YYYYMMDD-HHMMSS.sql.gz | podman exec -i classroom-ready-db psql -U classroom_ready classroom_ready
 ```
 
-Backup upload foto:
+Backup manual upload foto:
 
 ```bash
-docker run --rm -v classroom_ready_uploads:/data -v "$PWD/backups:/backup" alpine tar -czf /backup/classroom_ready_uploads_$(date +%F_%H%M%S).tar.gz -C /data .
+podman run --rm -v classroom_ready_uploads:/data:ro -v "$PWD/backups:/backup" alpine tar -czf /backup/classroom_ready_uploads_$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
 ```
 
 Untuk bind mount host, backup langsung folder host upload yang dipakai `UPLOAD_DIR`.
@@ -474,9 +488,9 @@ File yang sengaja tidak boleh ikut commit/arsip:
 **App tidak bisa connect database**
 
 - Pastikan `DATABASE_URL` sesuai konteks.
-- Local host memakai `localhost:5438`.
-- Container app memakai `db:5432`.
-- Cek `docker compose ps` dan `docker compose logs db`.
+- Local host memakai `localhost:55438`.
+- Container app memakai `classroom-ready-db:5432`.
+- Cek `podman ps` dan `podman logs classroom-ready-db`.
 
 **QR mengarah ke localhost di HP**
 
@@ -534,7 +548,7 @@ Untuk developer baru:
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d db
+podman compose up -d db
 npm run db:generate
 npm run db:push
 npm run db:seed
@@ -544,8 +558,8 @@ npm run dev:host
 Untuk production preview di VPS:
 
 ```bash
-docker compose up -d --build
-curl -I http://127.0.0.1:3020/mobile
+scripts/deploy.sh
+scripts/healthcheck.sh
 ```
 
 Route paling penting untuk QA:

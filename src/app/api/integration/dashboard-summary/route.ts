@@ -1,13 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { getEffectiveRoomStatus, inspectionResultLabel, roomStatusLabel } from "@/lib/status";
+import { issueDisplayTitle } from "@/lib/issues";
 
 export const dynamic = "force-dynamic";
 
 const activeIssueStatuses = ["OPEN", "IN_PROGRESS"] as const;
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
 
+// Restrict cross-origin reads to the known dashboard origin instead of "*",
+// so arbitrary third-party sites cannot read this operational data from a
+// visitor's browser. Same-origin and server-side consumers are unaffected.
+const allowedOrigin = process.env.INTEGRATION_ALLOWED_ORIGIN?.trim() || "https://pengajaran.updlbanjarbaru.web.id";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": allowedOrigin,
+  Vary: "Origin",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Accept",
   "Cache-Control": "no-store",
@@ -77,7 +84,7 @@ export async function GET() {
         where: { status: { in: [...activeIssueStatuses] } },
         orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
         take: 10,
-        include: { room: true },
+        include: { room: true, response: { include: { item: true } } },
       }),
     ]);
 
@@ -97,7 +104,7 @@ export async function GET() {
         certificationExpiresAt: toIso(room.certificationExpiresAt),
         latestInspectionAt: toIso(latestInspection?.submittedAt),
         latestInspectionResult: latestInspection?.result ? inspectionResultLabel(latestInspection.result) : null,
-        latestInspector: latestInspection?.inspector?.name || null,
+        // Inspector name intentionally omitted: this endpoint is public/unauthenticated (PII).
         openIssuesCount: room.issues.length,
         priorityIssuesCount: room.issues.filter((issue) => ["P1", "P2"].includes(issue.priority)).length,
         links: {
@@ -140,7 +147,7 @@ export async function GET() {
         id: issue.id,
         roomCode: issue.room.code,
         roomName: issue.room.name,
-        title: issue.title,
+        title: issueDisplayTitle(issue),
         priority: issue.priority,
         status: issue.status,
         category: issue.category,
@@ -155,16 +162,19 @@ export async function GET() {
         result: inspection.result,
         resultLabel: inspectionResultLabel(inspection.result),
         submittedAt: toIso(inspection.submittedAt),
-        inspector: inspection.inspector?.name || null,
+        // Inspector name intentionally omitted: this endpoint is public/unauthenticated (PII).
         link: appPath(`/admin/rooms/${inspection.room.id}`),
       })),
     });
   } catch (error) {
+    // Log the detail server-side; never leak internal/driver error text to an
+    // unauthenticated caller.
+    console.error("[integration/dashboard-summary] failed:", error);
     return jsonResponse(
       {
         ok: false,
         generatedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : "Gagal memuat ringkasan pemeriksaan kelas",
+        error: "Gagal memuat ringkasan pemeriksaan kelas",
       },
       { status: 500 },
     );

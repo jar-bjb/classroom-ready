@@ -86,7 +86,7 @@ export default async function AdminLogsPage({
                 <tr>
                   <th className="px-4 py-3">Tanggal</th>
                   <th className="px-4 py-3">Kelas</th>
-                  <th className="px-4 py-3">Issue</th>
+                  <th className="px-4 py-3">Temuan</th>
                   <th className="px-4 py-3">Kategori</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Petugas</th>
@@ -102,7 +102,8 @@ export default async function AdminLogsPage({
                     <td className="px-4 py-3 text-muted">{row["Tanggal Issue"]}</td>
                     <td className="px-4 py-3 font-bold">{row["Kelas"]}</td>
                     <td className="px-4 py-3">
-                      <p className="font-bold">{row["Judul Issue"]}</p>
+                      <p className="font-bold text-rose-950">{row["Temuan"]}</p>
+                      <p className="text-xs font-semibold text-rose-700">{row["Status Item"]}</p>
                       <p className="text-xs text-muted">{row["Catatan Temuan"]}</p>
                     </td>
                     <td className="px-4 py-3">{row["Kategori"]} • {row["Prioritas"]}</td>

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { categoryLabel, inspectionResultLabel } from "@/lib/status";
 import { formatDateTime } from "@/lib/dates";
+import { issueDisplayTitle, issueResponseValueLabel } from "@/lib/issues";
 import type { IssueStatus } from "@/generated/prisma/client";
 
 const activeIssueStatuses: IssueStatus[] = ["OPEN", "IN_PROGRESS"];
@@ -13,15 +14,18 @@ export interface LogFilters {
   to?: string;
 }
 
+// Day boundaries are interpreted in WITA (UTC+8), Banjarbaru's local time, so a
+// date filter of e.g. 2026-07-14 covers that whole local day (not the +07:00/WIB
+// window used before, which was off by an hour).
 function parseDateStart(value?: string) {
   if (!value) return undefined;
-  const date = new Date(`${value}T00:00:00.000+07:00`);
+  const date = new Date(`${value}T00:00:00.000+08:00`);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function parseDateEnd(value?: string) {
   if (!value) return undefined;
-  const date = new Date(`${value}T23:59:59.999+07:00`);
+  const date = new Date(`${value}T23:59:59.999+08:00`);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
@@ -92,13 +96,14 @@ export function issueLogRows(issues: AdminLogIssue[]) {
     "Tanggal Issue": formatDateTime(issue.createdAt),
     "Kelas": issue.room.code,
     "Nama Kelas": issue.room.name,
-    "Judul Issue": issue.title,
+    "Temuan": issueDisplayTitle(issue),
     "Kategori": categoryLabel(issue.category),
     "Prioritas": issue.priority,
     "Status": issueStatusLabel(issue.status),
     "Petugas Pemeriksa": issue.session?.inspector?.name || issue.createdBy?.name || "-",
     "Hasil Pemeriksaan": issue.session ? inspectionResultLabel(issue.session.result) : "-",
     "Item Checklist": issue.response?.item?.prompt || "-",
+    "Status Item": issueResponseValueLabel(issue.response?.value),
     "Catatan Temuan": issue.description || "-",
     "Ditugaskan Ke": issue.assignedRole || "-",
     "Waktu Close": formatDateTime(issue.resolvedAt),
@@ -106,6 +111,14 @@ export function issueLogRows(issues: AdminLogIssue[]) {
     "Catatan Close": issue.resolutionNote || "-",
     "Log Lifecycle": issue.logs.map((log) => `${formatDateTime(log.createdAt)} ${log.actor?.name || "Sistem"}: ${log.action}${log.newStatus ? ` -> ${issueStatusLabel(log.newStatus)}` : ""}${log.note ? ` (${log.note})` : ""}`).join(" | ") || "-",
   }));
+}
+
+// Neutralize spreadsheet formula/command injection: a cell whose text starts with
+// = + - @ (or a control char) is treated as a live formula by Excel/Sheets. User
+// free-text (issue notes, resolution notes) flows into this export, so prefix such
+// values with an apostrophe to force them to be read as text.
+function neutralizeFormula(value: string) {
+  return /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value;
 }
 
 function escapeHtml(value: unknown) {
@@ -116,13 +129,17 @@ function escapeHtml(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
+function escapeCell(value: unknown) {
+  return escapeHtml(neutralizeFormula(String(value ?? "")));
+}
+
 export function rowsToExcelHtml(rows: Record<string, string>[]) {
   const headers = rows[0] ? Object.keys(rows[0]) : ["Tidak ada data"];
   const bodyRows = rows.length > 0 ? rows : [{ "Tidak ada data": "Tidak ada log sesuai filter." }];
   return `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${headers
     .map((header) => `<th>${escapeHtml(header)}</th>`)
     .join("")}</tr></thead><tbody>${bodyRows
-    .map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header] || "")}</td>`).join("")}</tr>`)
+    .map((row) => `<tr>${headers.map((header) => `<td>${escapeCell(row[header] || "")}</td>`).join("")}</tr>`)
     .join("")}</tbody></table></body></html>`;
 }
 

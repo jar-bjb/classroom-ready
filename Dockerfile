@@ -9,7 +9,7 @@ ARG NEXT_PUBLIC_BASE_PATH=""
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 # Needed because Next imports server routes during build; actual runtime DB URL comes from compose/env.
-ENV DATABASE_URL=postgresql://classroom_ready:classroom_ready_dev@db:5432/classroom_ready?schema=public
+ENV DATABASE_URL=postgresql://classroom_ready:classroom_ready_dev@classroom-ready-db:5432/classroom_ready?schema=public
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
@@ -32,4 +32,4 @@ COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 USER nextjs
 EXPOSE 3000
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push && node server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node server.js"]

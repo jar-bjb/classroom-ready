@@ -11,11 +11,14 @@ services:
       - classroom_ready_pg:/var/lib/postgresql/data
     ports:
       - "${CLASSROOM_DB_BIND:-127.0.0.1:55438}:5432"
+    networks:
+      - classroom_ready_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
   app:
     build:
@@ -23,12 +26,12 @@ services:
       args:
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
     container_name: classroom-ready-app
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://classroom_ready:classroom_ready_dev_change_me@db:5432/classroom_ready?schema=public}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://classroom_ready:classroom_ready_dev_change_me@classroom-ready-db:5432/classroom_ready?schema=public}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://127.0.0.1:3020}
       NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
       UPLOAD_DIR: ${UPLOAD_DIR:-/app/uploads}
@@ -40,7 +43,28 @@ services:
       - classroom_ready_uploads:/app/uploads
     ports:
       - "${CLASSROOM_APP_BIND:-127.0.0.1:3020}:3000"
+    networks:
+      - classroom_ready_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const http=require('node:http'); let base=process.env.NEXT_PUBLIC_BASE_PATH||''; if (base.endsWith('/')) base=base.slice(0,-1); const path=base + '/api/health'; const req=http.get({host:'127.0.0.1',port:process.env.PORT||3000,path,timeout:4000},res=>process.exit(res.statusCode===200?0:1)); req.on('error',()=>process.exit(1)); req.on('timeout',()=>req.destroy(new Error('timeout')));\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
 volumes:
   classroom_ready_pg:
+    name: classroom_ready_pg
+    external: true
   classroom_ready_uploads:
+    name: classroom_ready_uploads
+    external: true
+
+networks:
+  classroom_ready_net:
+    name: classroom-ready-net
+    external: true

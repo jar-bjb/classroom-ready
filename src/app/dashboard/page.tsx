@@ -3,6 +3,7 @@ import { AlertTriangle, ExternalLink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/dates";
 import { getEffectiveRoomStatus, inspectionResultLabel, roomStatusLabel } from "@/lib/status";
+import { issueDisplayTitle } from "@/lib/issues";
 import { MetricCard } from "@/components/metric-card";
 import { StatusBadge } from "@/components/status-badge";
 import { AdminNav } from "@/components/admin-nav";
@@ -13,7 +14,12 @@ export default async function DashboardPage() {
   const [rooms, latestInspections, openIssues] = await Promise.all([
     prisma.room.findMany({ where: { isActive: true }, include: { type: true }, orderBy: { code: "asc" } }),
     prisma.inspectionSession.findMany({ orderBy: { submittedAt: "desc" }, take: 8, include: { room: true, inspector: true } }),
-    prisma.issue.findMany({ where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, orderBy: { createdAt: "desc" }, take: 8, include: { room: true } }),
+    prisma.issue.findMany({
+      where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { room: true, response: { include: { item: true } } },
+    }),
   ]);
 
   const effective = rooms.map((room) => ({ ...room, effectiveStatus: getEffectiveRoomStatus(room.status, room.certificationExpiresAt) }));
@@ -69,7 +75,7 @@ export default async function DashboardPage() {
               {openIssues.length === 0 ? <p className="text-sm text-muted">Tidak ada issue terbuka.</p> : null}
               {openIssues.map((issue) => (
                 <div key={issue.id} className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-sm">
-                  <p className="flex items-start gap-2 font-bold text-rose-950"><AlertTriangle size={16} className="mt-0.5 shrink-0" /> {issue.title}</p>
+                  <p className="flex items-start gap-2 font-bold text-rose-950"><AlertTriangle size={16} className="mt-0.5 shrink-0" /> {issueDisplayTitle(issue)}</p>
                   <p className="mt-1 text-rose-800">{issue.room.code} • {issue.priority} • {issue.status}</p>
                 </div>
               ))}
